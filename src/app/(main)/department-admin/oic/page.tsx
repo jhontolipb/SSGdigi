@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PlusCircle, MoreHorizontal, Search, Edit, Trash2, UserCog, UserPlus, UserMinus } from "lucide-react";
+import { PlusCircle, MoreHorizontal, Search, Edit, Trash2, UserCog, UserPlus, UserMinus, Loader2 } from "lucide-react";
 import type { UserProfile } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 const defaultOICPassword = "password123";
 
 export default function DepartmentOICManagementPage() {
-  const { user: deptAdminUser, allUsers, updateUser, addUser, deleteUser } = useAuth();
+  const { user: deptAdminUser, allUsers, updateUser, addUser, deleteUserProfile, loading: authLoading } = useAuth();
   const { toast } = useToast();
 
   const departmentId = deptAdminUser?.departmentID;
@@ -32,8 +32,9 @@ export default function DepartmentOICManagementPage() {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedOicToAssign, setSelectedOicToAssign] = useState<string | undefined>(undefined);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [formData, setFormData] = useState<Partial<UserProfile>>({
+  const [formData, setFormData] = useState<Partial<UserProfile> & { password?: string }>({
     fullName: '', email: '', role: 'oic', password: ''
   });
 
@@ -42,7 +43,6 @@ export default function DepartmentOICManagementPage() {
       const assigned = allUsers.filter(u => u.role === 'oic' && u.departmentID === departmentId);
       setDepartmentOics(assigned);
       
-      // OICs available for assignment: role is 'oic' AND no departmentID
       const available = allUsers.filter(u => u.role === 'oic' && !u.departmentID && u.userID !== deptAdminUser?.userID);
       setAvailableOicsToAssign(available);
     } else {
@@ -66,7 +66,7 @@ export default function DepartmentOICManagementPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmitForm = () => { 
+  const handleSubmitForm = async () => { 
     if (!formData.fullName || !formData.email) {
       toast({ title: "Error", description: "Full name and email are required.", variant: "destructive" });
       return;
@@ -75,30 +75,28 @@ export default function DepartmentOICManagementPage() {
       toast({ title: "Error", description: "Department information not found.", variant: "destructive" });
       return;
     }
+    setIsSubmitting(true);
 
     if (editingUser) {
-      const userToUpdate: UserProfile = { 
-        ...editingUser, 
+      const profileUpdates: Partial<UserProfile> & { password?: string } = { 
         fullName: formData.fullName!,
-        email: formData.email!,
-        password: formData.password ? formData.password : editingUser.password,
-        departmentID: departmentId, 
+        email: formData.email!, // Email editing is typically disabled
+        password: formData.password || undefined, // Pass password only if entered
+        departmentID: departmentId, // Ensure department ID is associated
         role: 'oic',
       };
-      updateUser(userToUpdate);
-      toast({ title: "Success", description: "OIC updated successfully." });
+      await updateUser(profileUpdates, editingUser.userID);
     } else { 
-      const newUser: UserProfile = {
-        userID: `user${Date.now()}`,
+      const newUserProfile: Omit<UserProfile, 'userID' | 'password'> = {
         fullName: formData.fullName!,
         email: formData.email!,
-        password: formData.password || defaultOICPassword,
         role: 'oic',
         departmentID: departmentId, 
       };
-      addUser(newUser);
-      toast({ title: "Success", description: "New OIC created and assigned to your department." });
+      const newPassword = formData.password || defaultOICPassword;
+      await addUser(newUserProfile, newPassword);
     }
+    setIsSubmitting(false);
     setIsFormOpen(false);
     setEditingUser(null);
     setFormData({ fullName: '', email: '', role: 'oic', password: '' });
@@ -110,7 +108,7 @@ export default function DepartmentOICManagementPage() {
         fullName: user.fullName, 
         email: user.email, 
         role: 'oic', 
-        password: '' 
+        password: '' // Clear password for edit
     });
     setIsFormOpen(true);
   };
@@ -121,40 +119,43 @@ export default function DepartmentOICManagementPage() {
     setIsFormOpen(true);
   }
 
-  const handleUnassignOic = (oicUserId: string) => {
+  const handleUnassignOic = async (oicUserId: string) => {
      if (window.confirm("Are you sure you want to unassign this OIC from your department?")) {
-        const oicToUpdate = allUsers.find(u => u.userID === oicUserId);
-        if (oicToUpdate) {
-            updateUser({ ...oicToUpdate, departmentID: undefined });
-            toast({ title: "OIC Unassigned", description: `${oicToUpdate.fullName} has been unassigned from the department.` });
-        }
+        setIsSubmitting(true);
+        await updateUser({ departmentID: undefined }, oicUserId);
+        toast({ title: "OIC Unassigned", description: `OIC has been unassigned from the department.` });
+        setIsSubmitting(false);
     }
   };
 
-  const handleDeleteOic = (oicUserId: string) => {
-    if (window.confirm("Are you sure you want to delete this OIC? This action cannot be undone.")) {
-        deleteUser(oicUserId);
-        toast({ title: "OIC Deleted", description: "OIC has been removed from the system.", variant: "destructive" });
+  const handleDeleteOic = async (oicUserId: string) => {
+    if (window.confirm("Are you sure you want to delete this OIC's profile? This action cannot be undone.")) {
+        setIsSubmitting(true);
+        await deleteUserProfile(oicUserId);
+        // toast({ title: "OIC Deleted", description: "OIC profile has been removed from the system."}); // Context handles toast
+        setIsSubmitting(false);
     }
   };
 
-  const handleAssignExistingOic = () => {
+  const handleAssignExistingOic = async () => {
     if (!selectedOicToAssign || !departmentId) {
         toast({ title: "Error", description: "Please select an OIC to assign.", variant: "destructive"});
         return;
     }
+    setIsSubmitting(true);
     const oicToUpdate = allUsers.find(u => u.userID === selectedOicToAssign);
     if (oicToUpdate) {
-        updateUser({ ...oicToUpdate, departmentID: departmentId });
+        await updateUser({ departmentID: departmentId }, oicToUpdate.userID);
         toast({ title: "OIC Assigned", description: `${oicToUpdate.fullName} has been assigned to your department.`});
         setIsAssignDialogOpen(false);
         setSelectedOicToAssign(undefined);
     } else {
         toast({ title: "Error", description: "Selected OIC not found.", variant: "destructive"});
     }
+    setIsSubmitting(false);
   };
 
-  if (!departmentId) {
+  if (!departmentId && !authLoading) {
     return (
         <Card><CardHeader><CardTitle>Error</CardTitle></CardHeader><CardContent><p>You are not assigned to a department. OIC management is unavailable.</p></CardContent></Card>
     );
@@ -172,82 +173,94 @@ export default function DepartmentOICManagementPage() {
               <CardDescription>Manage OICs specifically for your department.</CardDescription>
             </div>
              <div className="flex gap-2">
-                <Button onClick={handleCreateNew} variant="outline">
+                <Button onClick={handleCreateNew} variant="outline" disabled={isSubmitting || authLoading}>
+                    { (isSubmitting || authLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     <UserPlus className="mr-2 h-4 w-4" /> Create New OIC for Dept.
                 </Button>
-                 <Button onClick={() => setIsAssignDialogOpen(true)} className="bg-primary hover:bg-primary/90">
+                 <Button onClick={() => setIsAssignDialogOpen(true)} className="bg-primary hover:bg-primary/90" disabled={isSubmitting || authLoading}>
+                    { (isSubmitting || authLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     <UserPlus className="mr-2 h-4 w-4" /> Assign Existing OIC
                 </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4 p-4 border rounded-lg bg-muted/20">
-            <Search className="h-5 w-5 text-muted-foreground" />
-            <Input 
-              placeholder="Search department OICs by name or email..." 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-sm"
-            />
-          </div>
+          {authLoading && !departmentOics.length ? (
+            <div className="flex justify-center items-center py-10">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="ml-2">Loading department OICs...</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-4 p-4 border rounded-lg bg-muted/20">
+                <Search className="h-5 w-5 text-muted-foreground" />
+                <Input 
+                  placeholder="Search department OICs by name or email..." 
+                  value={searchTerm} 
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
 
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Full Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredDepartmentOics.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
-                      No OICs assigned to this department{searchTerm ? ' matching your search' : ''}.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredDepartmentOics.map((oic) => (
-                    <TableRow key={oic.userID}>
-                      <TableCell className="font-medium">{oic.fullName}</TableCell>
-                      <TableCell>{oic.email}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>OIC Actions</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => handleEdit(oic)}>
-                              <Edit className="mr-2 h-4 w-4" /> Edit Details
-                            </DropdownMenuItem>
-                             <DropdownMenuItem onClick={() => handleUnassignOic(oic.userID)}>
-                              <UserMinus className="mr-2 h-4 w-4" /> Unassign from Dept.
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => handleDeleteOic(oic.userID)}
-                              className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete OIC User
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Full Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDepartmentOics.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
+                          No OICs assigned to this department{searchTerm ? ' matching your search' : ''}.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredDepartmentOics.map((oic) => (
+                        <TableRow key={oic.userID}>
+                          <TableCell className="font-medium">{oic.fullName}</TableCell>
+                          <TableCell>{oic.email}</TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0" disabled={isSubmitting}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>OIC Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleEdit(oic)} disabled={isSubmitting}>
+                                  <Edit className="mr-2 h-4 w-4" /> Edit Details
+                                </DropdownMenuItem>
+                                 <DropdownMenuItem onClick={() => handleUnassignOic(oic.userID)} disabled={isSubmitting}>
+                                  <UserMinus className="mr-2 h-4 w-4" /> Unassign from Dept.
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  onClick={() => handleDeleteOic(oic.userID)}
+                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                  disabled={isSubmitting}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" /> Delete OIC Profile
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+      <Dialog open={isFormOpen} onOpenChange={(open) => {if(!isSubmitting) setIsFormOpen(open);}}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingUser ? 'Edit OIC for Department' : 'Create New OIC for Department'}</DialogTitle>
@@ -258,50 +271,37 @@ export default function DepartmentOICManagementPage() {
           <div className="grid gap-4 py-4">
             <div>
               <Label htmlFor="fullName">Full Name</Label>
-              <Input id="fullName" name="fullName" value={formData.fullName || ''} onChange={handleFormChange} />
+              <Input id="fullName" name="fullName" value={formData.fullName || ''} onChange={handleFormChange} disabled={isSubmitting}/>
             </div>
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} />
+              <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} disabled={!!editingUser || isSubmitting}/>
             </div>
-            {!editingUser && (
-                <div>
-                <Label htmlFor="password">Password</Label>
-                <Input 
-                    id="password" 
-                    name="password" 
-                    type="password" 
-                    placeholder={defaultOICPassword}
-                    value={formData.password || ''} 
-                    onChange={handleFormChange} 
-                />
-                 <p className="text-xs text-muted-foreground mt-1">Default is '{defaultOICPassword}' if left blank.</p>
-                </div>
-            )}
-             {editingUser && (
-                <div>
-                <Label htmlFor="password">New Password (Optional)</Label>
-                <Input 
-                    id="password" 
-                    name="password" 
-                    type="password" 
-                    placeholder="Leave blank to keep unchanged"
-                    value={formData.password || ''} 
-                    onChange={handleFormChange} 
-                />
-                </div>
-            )}
+            <div>
+              <Label htmlFor="password">Password</Label>
+              <Input 
+                  id="password" 
+                  name="password" 
+                  type="password" 
+                  placeholder={editingUser ? "Leave blank to keep unchanged" : defaultOICPassword}
+                  value={formData.password || ''} 
+                  onChange={handleFormChange} 
+                  disabled={isSubmitting}
+              />
+              {!editingUser && <p className="text-xs text-muted-foreground mt-1">Default is '{defaultOICPassword}' if left blank.</p>}
+            </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
-            <Button type="submit" onClick={handleSubmitForm} className="bg-primary hover:bg-primary/90">
+            <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" onClick={handleSubmitForm} className="bg-primary hover:bg-primary/90" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingUser ? 'Save Changes' : 'Create & Assign OIC'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+      <Dialog open={isAssignDialogOpen} onOpenChange={(open) => {if(!isSubmitting) setIsAssignDialogOpen(open);}}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>Assign Existing OIC to Your Department</DialogTitle>
@@ -309,7 +309,7 @@ export default function DepartmentOICManagementPage() {
             </DialogHeader>
             <div className="py-4">
                 <Label htmlFor="oicSelectDept">Available OICs</Label>
-                <Select value={selectedOicToAssign} onValueChange={setSelectedOicToAssign}>
+                <Select value={selectedOicToAssign} onValueChange={setSelectedOicToAssign} disabled={isSubmitting}>
                     <SelectTrigger id="oicSelectDept">
                         <SelectValue placeholder="Choose an OIC..." />
                     </SelectTrigger>
@@ -325,8 +325,9 @@ export default function DepartmentOICManagementPage() {
                 </Select>
             </div>
             <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleAssignExistingOic} disabled={!selectedOicToAssign || selectedOicToAssign === 'no-oics-dept'} className="bg-primary hover:bg-primary/90">
+                <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)} disabled={isSubmitting}>Cancel</Button>
+                <Button onClick={handleAssignExistingOic} disabled={!selectedOicToAssign || selectedOicToAssign === 'no-oics-dept' || isSubmitting} className="bg-primary hover:bg-primary/90">
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Assign to Department
                 </Button>
             </DialogFooter>
@@ -335,4 +336,3 @@ export default function DepartmentOICManagementPage() {
     </div>
   );
 }
-
