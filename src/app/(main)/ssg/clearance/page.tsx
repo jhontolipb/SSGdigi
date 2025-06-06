@@ -1,8 +1,4 @@
 
-// TODO: Implement SSG Admin Clearance Approval Workflow page
-// This page will allow SSG Admins to view all clearance_requests.
-// They can approve/reject requests (final step) and generate unifiedClearanceID.
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -12,47 +8,33 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListChecks, CheckCircle, XCircle, MoreHorizontal, Filter, Search, FileText } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { ClearanceRequest as ClearanceRequestType, ApprovalStatus } from '@/types/user'; // Renamed to avoid conflict
 
-type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-interface ClearanceRequest {
-  requestID: string;
-  studentName: string;
-  studentID: string;
-  department: string;
-  requestedDate: string; // Should be Timestamp
-  clubApprovalStatus: ApprovalStatus;
-  departmentApprovalStatus: ApprovalStatus;
-  ssgStatus: ApprovalStatus; // This is what SSG admin controls
-  unifiedClearanceID?: string;
-  sanctionDetails?: string;
-}
-
-// Mock Data
-const mockRequests: ClearanceRequest[] = [
-  { requestID: 'req1', studentName: 'John Doe', studentID: 'S001', department: 'BSIT', requestedDate: '2024-07-01', clubApprovalStatus: 'approved', departmentApprovalStatus: 'approved', ssgStatus: 'pending' },
-  { requestID: 'req2', studentName: 'Jane Smith', studentID: 'S002', department: 'BSTM', requestedDate: '2024-07-02', clubApprovalStatus: 'approved', departmentApprovalStatus: 'pending', ssgStatus: 'pending', sanctionDetails: "Missed 1 club event" },
-  { requestID: 'req3', studentName: 'Mike Brown', studentID: 'S003', department: 'BSCrim', requestedDate: '2024-07-03', clubApprovalStatus: 'rejected', departmentApprovalStatus: 'rejected', ssgStatus: 'pending' },
-  { requestID: 'req4', studentName: 'Alice Green', studentID: 'S004', department: 'BSIT', requestedDate: '2024-07-04', clubApprovalStatus: 'approved', departmentApprovalStatus: 'approved', ssgStatus: 'approved', unifiedClearanceID: 'UC-2024-001' },
-];
+const initialRequests: ClearanceRequestType[] = [];
 
 export default function ClearanceApprovalPage() {
-  const [requests, setRequests] = useState<ClearanceRequest[]>(mockRequests);
-  const [filteredRequests, setFilteredRequests] = useState<ClearanceRequest[]>(mockRequests);
-  const [selectedRequest, setSelectedRequest] = useState<ClearanceRequest | null>(null);
+  const [requests, setRequests] = useState<ClearanceRequestType[]>(initialRequests);
+  const [filteredRequests, setFilteredRequests] = useState<ClearanceRequestType[]>(initialRequests);
+  const [selectedRequest, setSelectedRequest] = useState<ClearanceRequestType | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ApprovalStatus | 'all'>('all');
 
 
   useEffect(() => {
+    // In a real app, fetch requests from a backend
+    setRequests(initialRequests);
+  }, []);
+
+  useEffect(() => {
     let result = requests;
     if (searchTerm) {
       result = result.filter(req => 
-        req.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.studentID.toLowerCase().includes(searchTerm.toLowerCase())
+        (req.studentUserID && req.studentUserID.toLowerCase().includes(searchTerm.toLowerCase())) || // Assuming studentUserID is used for name search
+        req.requestID.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     if (statusFilter !== 'all') {
@@ -61,7 +43,7 @@ export default function ClearanceApprovalPage() {
     setFilteredRequests(result);
   }, [requests, searchTerm, statusFilter]);
 
-  const handleViewDetails = (request: ClearanceRequest) => {
+  const handleViewDetails = (request: ClearanceRequestType) => {
     setSelectedRequest(request);
     setIsDetailsModalOpen(true);
   };
@@ -72,7 +54,6 @@ export default function ClearanceApprovalPage() {
       ? { ...req, ssgStatus: 'approved', unifiedClearanceID: `UC-${new Date().getFullYear()}-${String(Math.floor(Math.random()*1000)).padStart(3,'0')}` } 
       : req
     ));
-    // Close modal if open for this request
     if(selectedRequest?.requestID === requestId) setIsDetailsModalOpen(false);
   };
 
@@ -108,7 +89,7 @@ export default function ClearanceApprovalPage() {
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4 mb-6 p-4 border rounded-lg bg-muted/20">
             <Input 
-              placeholder="Search by student name or ID..." 
+              placeholder="Search by student ID or request ID..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1"
@@ -129,9 +110,8 @@ export default function ClearanceApprovalPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student Name</TableHead>
                   <TableHead>Student ID</TableHead>
-                  <TableHead>Department</TableHead>
+                  <TableHead>Request ID</TableHead>
                   <TableHead>Club Status</TableHead>
                   <TableHead>Dept Status</TableHead>
                   <TableHead>SSG Status</TableHead>
@@ -141,9 +121,8 @@ export default function ClearanceApprovalPage() {
               <TableBody>
                 {filteredRequests.map((req) => (
                   <TableRow key={req.requestID}>
-                    <TableCell className="font-medium">{req.studentName}</TableCell>
-                    <TableCell>{req.studentID}</TableCell>
-                    <TableCell>{req.department}</TableCell>
+                    <TableCell className="font-medium">{req.studentUserID}</TableCell> {/* Display studentUserID */}
+                    <TableCell>{req.requestID}</TableCell>
                     <TableCell>{getStatusBadge(req.clubApprovalStatus)}</TableCell>
                     <TableCell>{getStatusBadge(req.departmentApprovalStatus)}</TableCell>
                     <TableCell>{getStatusBadge(req.ssgStatus)}</TableCell>
@@ -163,8 +142,8 @@ export default function ClearanceApprovalPage() {
                             </DropdownMenuItem>
                           )}
                            {req.ssgStatus === 'approved' && req.unifiedClearanceID && (
-                            <DropdownMenuItem onClick={() => alert(`Download clearance PDF for ${req.unifiedClearanceID}`)}>
-                               <FileText className="mr-2 h-4 w-4" /> Download Clearance
+                            <DropdownMenuItem onClick={() => alert(`Download clearance PDF for ${req.unifiedClearanceID}`)} disabled>
+                               <FileText className="mr-2 h-4 w-4" /> Download Clearance (Not Impl.)
                             </DropdownMenuItem>
                            )}
                         </DropdownMenuContent>
@@ -179,16 +158,16 @@ export default function ClearanceApprovalPage() {
         </CardContent>
       </Card>
 
-      {/* Details Modal */}
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Clearance Request Details</DialogTitle>
-            <DialogDescription>Student: {selectedRequest?.studentName} ({selectedRequest?.studentID})</DialogDescription>
+            {/* <DialogDescription>Student: {selectedRequest?.studentUserID}</DialogDescription> */}
           </DialogHeader>
           {selectedRequest && (
             <div className="py-4 space-y-3">
-              <p><strong>Department:</strong> {selectedRequest.department}</p>
+              <p><strong>Student ID:</strong> {selectedRequest.studentUserID}</p>
+              <p><strong>Request ID:</strong> {selectedRequest.requestID}</p>
               <p><strong>Requested Date:</strong> {selectedRequest.requestedDate}</p>
               <p><strong>Club Approval:</strong> {getStatusBadge(selectedRequest.clubApprovalStatus)}</p>
               <p><strong>Department Approval:</strong> {getStatusBadge(selectedRequest.departmentApprovalStatus)}</p>

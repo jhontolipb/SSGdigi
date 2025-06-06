@@ -10,7 +10,6 @@ import { MessageSquare, Send, Users, User, Bot } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from "@/contexts/AuthContext";
 
-// Mock data types
 interface Message {
   id: string;
   senderId: string;
@@ -22,49 +21,38 @@ interface Message {
 
 interface Conversation {
   id: string;
-  name: string; // e.g., "SSG Admin", "BSIT Department", "John Doe"
-  type: 'user' | 'group' | 'bot'; // 'bot' for AI composer target
+  name: string; 
+  type: 'user' | 'group' | 'bot';
   lastMessage: string;
   timestamp: Date;
   unreadCount?: number;
-  avatar?: string; // URL for avatar
+  avatar?: string; 
 }
 
-const mockConversations: Conversation[] = [
-  { id: 'convo1', name: 'SSG Admin', type: 'group', lastMessage: 'Meeting reminder for tomorrow.', timestamp: new Date(Date.now() - 3600000), unreadCount: 2, avatar: 'https://placehold.co/40x40.png/3F51B5/FFFFFF?text=SA' },
-  { id: 'convo2', name: 'BS Information Technology', type: 'group', lastMessage: 'Please submit your project proposals.', timestamp: new Date(Date.now() - 7200000), avatar: 'https://placehold.co/40x40.png/009688/FFFFFF?text=IT' },
-  { id: 'convo3', name: 'Robotics Club', type: 'group', lastMessage: 'Workshop next week!', timestamp: new Date(Date.now() - 10800000), unreadCount: 1, avatar: 'https://placehold.co/40x40.png/FFC107/000000?text=RC' },
-  { id: 'convo4', name: 'Jane Doe (Student)', type: 'user', lastMessage: 'Thanks for the help!', timestamp: new Date(Date.now() - 86400000), avatar: 'https://placehold.co/40x40.png/9C27B0/FFFFFF?text=JD' },
-];
-
-const mockMessages: Record<string, Message[]> = {
-  convo1: [
-    { id: 'msg1', senderId: 'other', senderName: 'SSG Admin', text: 'Hello! Just a reminder about the SSG meeting tomorrow at 10 AM.', timestamp: new Date(Date.now() - 3700000), isOwn: false },
-    { id: 'msg2', senderId: 'me', senderName: 'Current User', text: 'Got it, thanks for the reminder!', timestamp: new Date(Date.now() - 3650000), isOwn: true },
-    { id: 'msg3', senderId: 'other', senderName: 'SSG Admin', text: 'Meeting reminder for tomorrow.', timestamp: new Date(Date.now() - 3600000), isOwn: false },
-  ],
-  convo2: [
-    { id: 'msg4', senderId: 'other', senderName: 'BSIT Dept', text: 'Please submit your project proposals by end of week.', timestamp: new Date(Date.now() - 7200000), isOwn: false },
-  ],
-   convo3: [
-    { id: 'msg5', senderId: 'other', senderName: 'Robotics Club', text: 'Workshop next week!', timestamp: new Date(Date.now() - 10800000), isOwn: false },
-  ],
-   convo4: [
-    { id: 'msg6', senderId: 'other', senderName: 'Jane Doe', text: 'Thanks for the help!', timestamp: new Date(Date.now() - 86400000), isOwn: false },
-  ],
-};
+const initialConversations: Conversation[] = [];
+const initialMessages: Record<string, Message[]> = {};
 
 
 export default function MessagesPage() {
   const { user } = useAuth();
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(mockConversations[0]?.id || null);
+  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Select the first conversation by default if conversations exist
+  useEffect(() => {
+    if (conversations.length > 0 && !selectedConversationId) {
+      setSelectedConversationId(conversations[0].id);
+    }
+  }, [conversations, selectedConversationId]);
+  
   useEffect(() => {
     if (selectedConversationId) {
-      setMessages(mockMessages[selectedConversationId] || []);
+      // In a real app, fetch messages for selectedConversationId
+      // For this mock, we use a local 'initialMessages' which will be empty
+      setMessages(initialMessages[selectedConversationId] || []);
     } else {
       setMessages([]);
     }
@@ -80,7 +68,7 @@ export default function MessagesPage() {
 
     const message: Message = {
       id: `msg${Date.now()}`,
-      senderId: user.id,
+      senderId: user.userID, // Changed from user.id to user.userID
       senderName: user.fullName,
       text: newMessage,
       timestamp: new Date(),
@@ -88,14 +76,23 @@ export default function MessagesPage() {
     };
     
     setMessages(prev => [...prev, message]);
-    // Also update mockMessages for persistence in this demo
-    mockMessages[selectedConversationId] = [...(mockMessages[selectedConversationId] || []), message];
-    // Update last message in conversation list (mock)
-    const convoIndex = mockConversations.findIndex(c => c.id === selectedConversationId);
-    if (convoIndex !== -1) {
-      mockConversations[convoIndex].lastMessage = newMessage;
-      mockConversations[convoIndex].timestamp = new Date();
+    
+    // In a real app, send message to backend and update conversation list
+    // For this mock, update local state (won't persist across sessions without backend)
+    const updatedConversations = conversations.map(c => {
+      if (c.id === selectedConversationId) {
+        return { ...c, lastMessage: newMessage, timestamp: new Date() };
+      }
+      return c;
+    });
+    setConversations(updatedConversations);
+    
+    // Update mockMessages for this demo (not a real backend)
+    if (!initialMessages[selectedConversationId]) {
+        initialMessages[selectedConversationId] = [];
     }
+    initialMessages[selectedConversationId].push(message);
+
 
     setNewMessage('');
   };
@@ -110,7 +107,7 @@ export default function MessagesPage() {
     return initials;
   };
 
-  const selectedConversation = mockConversations.find(c => c.id === selectedConversationId);
+  const selectedConversation = conversations.find(c => c.id === selectedConversationId);
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] md:flex-row rounded-lg border bg-card text-card-foreground shadow-lg">
@@ -123,7 +120,10 @@ export default function MessagesPage() {
           <Input placeholder="Search chats..." className="mt-2" />
         </div>
         <ScrollArea className="h-[calc(100vh-16rem)] md:h-full">
-          {mockConversations.map(convo => (
+          {conversations.length === 0 && (
+            <p className="p-4 text-center text-muted-foreground">No conversations yet.</p>
+          )}
+          {conversations.map(convo => (
             <div
               key={convo.id}
               className={`p-3 border-b cursor-pointer hover:bg-muted/50 ${selectedConversationId === convo.id ? 'bg-muted' : ''}`}
@@ -131,7 +131,7 @@ export default function MessagesPage() {
             >
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10">
-                  <AvatarImage src={convo.avatar} alt={convo.name} data-ai-hint="avatar chat" />
+                  {convo.avatar && <AvatarImage src={convo.avatar} alt={convo.name} data-ai-hint="avatar chat" />}
                   <AvatarFallback className={ convo.type === 'group' ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground'}>
                     {convo.type === 'group' ? <Users size={18} /> : convo.type === 'user' ? <User size={18} /> : <Bot size={18} />}
                   </AvatarFallback>
@@ -164,7 +164,7 @@ export default function MessagesPage() {
           <>
             <div className="p-4 border-b flex items-center gap-3 bg-card">
                <Avatar className="h-10 w-10">
-                  <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} data-ai-hint="avatar chat" />
+                  {selectedConversation.avatar && <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} data-ai-hint="avatar chat" />}
                   <AvatarFallback className={ selectedConversation.type === 'group' ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground'}>
                     {selectedConversation.type === 'group' ? <Users size={18} /> : selectedConversation.type === 'user' ? <User size={18} /> : <Bot size={18} />}
                   </AvatarFallback>
@@ -177,6 +177,9 @@ export default function MessagesPage() {
               </div>
             </div>
             <ScrollArea className="flex-1 p-4 space-y-4">
+              {messages.length === 0 && (
+                <p className="text-center text-muted-foreground">No messages in this conversation yet.</p>
+              )}
               {messages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-xs lg:max-w-md p-3 rounded-lg shadow ${msg.isOwn ? 'bg-primary text-primary-foreground' : 'bg-card'}`}>
@@ -205,7 +208,7 @@ export default function MessagesPage() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
             <MessageSquare size={64} className="mb-4" />
-            <p className="text-lg">Select a conversation to start messaging</p>
+            <p className="text-lg">Select a conversation to start messaging or no conversations available.</p>
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club } from '@/types/user';
+import type { UserRole, UserProfile, Department, Club, Event } from '@/types/user'; // Added Event
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +21,10 @@ interface AuthContextType {
   changePassword: (userId: string, currentPasswordAttempt: string, newPassword: string) => Promise<{ success: boolean, message: string }>;
   allClubs: Club[];
   allDepartments: Department[];
+  allEvents: Event[]; // Added allEvents
+  addEvent: (newEvent: Event) => void;
+  updateEvent: (updatedEvent: Event) => void;
+  deleteEvent: (eventId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -59,11 +63,16 @@ const initialMockUsers: UserProfile[] = [
   { userID: 'stud005', email: 'bruce.wayne@example.com', fullName: 'Bruce Wayne', role: 'student', departmentID: 'dept_bs_criminology', clubID: 'club_debate', qrCodeID: 'qr_bruce_wayne', points: 50, password: defaultPassword },
 ];
 
+const initialMockEvents: Event[] = [
+    // Initially no mock events, admins will create them
+];
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<UserProfile[]>(initialMockUsers);
+  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents);
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -72,21 +81,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = localStorage.getItem('campusConnectUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      // Ensure the stored user's data (especially password) is up-to-date with allUsers
       const canonicalUser = allUsers.find(u => u.userID === parsedUser.userID);
       if (canonicalUser) {
         setUser(canonicalUser); 
-      } else if (parsedUser.role === 'student' && parsedUser.qrCodeId) { 
-        // This case might be for newly registered students not yet in initialMockUsers if not added immediately
+      } else if (parsedUser.role === 'student' && parsedUser.qrCodeID) { 
         setUser(parsedUser);
         if(!allUsers.find(u => u.userID === parsedUser.userID)) { 
             setAllUsers(prev => [...prev, parsedUser]);
         }
       }
     }
+    
+    // Load events from localStorage if available (for demo persistence)
+    const storedEvents = localStorage.getItem('campusConnectEvents');
+    if (storedEvents) {
+        setAllEvents(JSON.parse(storedEvents));
+    }
+
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount, allUsers will be used from state later
+  }, []); 
 
   useEffect(() => {
     if (!loading && !user && !['/login', '/register'].includes(pathname)) {
@@ -136,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     setAllUsers(prev => {
         const updatedAllUsers = [...prev, newStudent];
-        localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers)); // Persist for demo
+        localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers)); 
         return updatedAllUsers;
     });
     localStorage.setItem('campusConnectUser', JSON.stringify(newStudent));
@@ -254,6 +268,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const addEvent = (newEvent: Event) => {
+    setAllEvents(prevEvents => {
+        const updatedEvents = [...prevEvents, newEvent];
+        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
+        return updatedEvents;
+    });
+  };
+
+  const updateEvent = (updatedEvent: Event) => {
+    setAllEvents(prevEvents => {
+        const updatedEvents = prevEvents.map(event => event.id === updatedEvent.id ? updatedEvent : event);
+        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
+        return updatedEvents;
+    });
+  };
+
+  const deleteEvent = (eventId: string) => {
+    setAllEvents(prevEvents => {
+        const updatedEvents = prevEvents.filter(event => event.id !== eventId);
+        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
+        return updatedEvents;
+    });
+  };
+
 
   return (
     <AuthContext.Provider value={{ 
@@ -271,6 +309,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         changePassword,
         allClubs: defaultClubs,
         allDepartments: defaultDepartments,
+        allEvents,
+        addEvent,
+        updateEvent,
+        deleteEvent,
     }}>
       {children}
     </AuthContext.Provider>

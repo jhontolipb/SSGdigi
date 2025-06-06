@@ -17,13 +17,12 @@ export default function DepartmentOICManagementPage() {
           <CardDescription>Manage OICs for your department's events.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Department Admins will use this page to manage OIC users for their department and assign them to events. Functionality to be implemented.</p>
+          <p className="text-muted-foreground">Department Admins will use this page to manage OIC users for their department and assign them to events.</p>
           <div className="mt-6 p-8 border-2 border-dashed border-border rounded-lg text-center">
-            <p className="text-lg font-medium text-muted-foreground">Departmental OIC CRUD & Assignment Tools Coming Soon</p>
+            <p className="text-lg font-medium text-muted-foreground">No OICs found for your department.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

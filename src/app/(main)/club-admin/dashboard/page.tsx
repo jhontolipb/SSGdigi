@@ -5,10 +5,10 @@ import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
 import Link from "next/link";
 
 const clubAdminStats = {
-  clubMembers: 75,
-  activeEvents: 2,
-  pendingClearances: 5,
-  recentMessages: 3,
+  clubMembers: 0,
+  activeEvents: 0,
+  pendingClearances: 0,
+  recentMessages: 0,
 };
 
 const quickLinks = [
@@ -20,12 +20,11 @@ const quickLinks = [
 
 
 export default function ClubAdminDashboardPage() {
-  // In a real app, fetch the club name associated with this admin
-  const clubName = "Your Awesome Club"; 
+  const clubName = "Club"; 
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-headline font-semibold">{clubName} - Admin Dashboard</h1>
+      <h1 className="text-3xl font-headline font-semibold">{clubName} Admin Dashboard</h1>
       
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -84,10 +83,9 @@ export default function ClubAdminDashboardPage() {
        <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Club Activity Feed</CardTitle>
-            <CardDescription>(Placeholder for recent club activities)</CardDescription>
           </CardHeader>
           <CardContent className="h-40 flex items-center justify-center bg-muted/30 rounded-md">
-            <p className="text-muted-foreground">Club activity updates will appear here.</p>
+            <p className="text-muted-foreground">No recent club activity.</p>
           </CardContent>
         </Card>
     </div>

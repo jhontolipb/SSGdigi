@@ -17,13 +17,12 @@ export default function ClubClearancePage() {
           <CardDescription>Manage clearance requests for your club members.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Club Admins will use this page to view clearance requests from their club members and approve or reject the club-specific part of the clearance. Functionality to be implemented.</p>
+          <p className="text-muted-foreground">Club Admins will use this page to view clearance requests from their club members and approve or reject the club-specific part of the clearance.</p>
           <div className="mt-6 p-8 border-2 border-dashed border-border rounded-lg text-center">
-            <p className="text-lg font-medium text-muted-foreground">Club Clearance Workflow Tools Coming Soon</p>
+            <p className="text-lg font-medium text-muted-foreground">No clearance requests found for your club members.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

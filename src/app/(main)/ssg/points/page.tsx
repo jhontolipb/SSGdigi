@@ -1,7 +1,4 @@
 
-// TODO: Implement SSG Admin Student Points Management page
-// This page will allow SSG Admins to assign/deduct points for individual students.
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -9,29 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Award, Search, User, Edit2, Plus, Minus } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Award, Search, Edit2, Plus, Minus } from "lucide-react"; // Removed User
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from '@/contexts/AuthContext'; // To get all student users
+import { useToast } from '@/hooks/use-toast'; // For notifications
 
 interface StudentPointRecord {
-  studentId: string;
+  studentId: string; // UserID of the student
   studentName: string;
   department: string;
   points: number;
 }
 
-// Mock Data
-const mockStudentPoints: StudentPointRecord[] = [
-  { studentId: 'S001', studentName: 'John Doe', department: 'BSIT', points: 150 },
-  { studentId: 'S002', studentName: 'Jane Smith', department: 'BSTM', points: 90 },
-  { studentId: 'S003', studentName: 'Mike Brown', department: 'BSCrim', points: 120 },
-  { studentId: 'S004', studentName: 'Alice Green', department: 'BSIT', points: 200 },
-];
-
 export default function StudentPointsPage() {
-  const [students, setStudents] = useState<StudentPointRecord[]>(mockStudentPoints);
-  const [filteredStudents, setFilteredStudents] = useState<StudentPointRecord[]>(mockStudentPoints);
+  const { allUsers, updateUser, allDepartments } = useAuth();
+  const { toast } = useToast();
+
+  const [studentsWithPoints, setStudentsWithPoints] = useState<StudentPointRecord[]>([]);
+  const [filteredStudents, setFilteredStudents] = useState<StudentPointRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentPointRecord | null>(null);
@@ -39,37 +33,60 @@ export default function StudentPointsPage() {
   const [changeType, setChangeType] = useState<'add' | 'deduct'>('add');
   const [reason, setReason] = useState('');
 
+  useEffect(() => {
+    const studentUsers = allUsers
+      .filter(user => user.role === 'student')
+      .map(student => {
+        const department = allDepartments.find(d => d.id === student.departmentID);
+        return {
+          studentId: student.userID,
+          studentName: student.fullName,
+          department: department ? department.name : 'N/A',
+          points: student.points || 0,
+        };
+      });
+    setStudentsWithPoints(studentUsers);
+  }, [allUsers, allDepartments]);
 
   useEffect(() => {
-    const result = students.filter(student =>
+    const result = studentsWithPoints.filter(student =>
       student.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.studentId.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredStudents(result);
-  }, [students, searchTerm]);
+  }, [studentsWithPoints, searchTerm]);
 
   const openModal = (student: StudentPointRecord) => {
     setSelectedStudent(student);
     setPointsChange(0);
     setReason('');
+    setChangeType('add');
     setIsModalOpen(true);
   };
 
   const handlePointsUpdate = () => {
-    if (!selectedStudent || pointsChange === 0 && reason.trim() === '') return; // Allow update if reason is given even for 0 points change
+    if (!selectedStudent) return;
+    if (pointsChange === 0 && reason.trim() === '') {
+        toast({title: "No Change", description: "Please enter points to change or a reason.", variant:"default"});
+        return;
+    }
 
-    const newPoints = changeType === 'add' 
-      ? selectedStudent.points + pointsChange
-      : selectedStudent.points - pointsChange;
+    const studentToUpdate = allUsers.find(u => u.userID === selectedStudent.studentId);
+    if (!studentToUpdate) {
+        toast({title: "Error", description: "Student not found.", variant:"destructive"});
+        return;
+    }
+
+    const currentPoints = studentToUpdate.points || 0;
+    const newPointsValue = changeType === 'add' 
+      ? currentPoints + pointsChange
+      : currentPoints - pointsChange;
     
-    // Ensure points don't go negative if not allowed
-    const finalPoints = Math.max(0, newPoints); 
+    const finalPoints = Math.max(0, newPointsValue); 
 
-    setStudents(prev => prev.map(s => 
-      s.studentId === selectedStudent.studentId ? { ...s, points: finalPoints } : s
-    ));
-    // Log the change reason (in a real app, this would be saved)
-    console.log(`Points updated for ${selectedStudent.studentName}: ${changeType} ${pointsChange} points. Reason: ${reason}`);
+    updateUser({ ...studentToUpdate, points: finalPoints });
+    
+    toast({title: "Points Updated", description: `Points for ${selectedStudent.studentName} set to ${finalPoints}. Reason: ${reason || 'N/A'}`});
     setIsModalOpen(false);
   };
 
@@ -84,6 +101,7 @@ export default function StudentPointsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex gap-4 mb-6 p-4 border rounded-lg bg-muted/20">
+            <Search className="h-5 w-5 self-center text-muted-foreground"/>
             <Input 
               placeholder="Search by student name or ID..." 
               value={searchTerm}
@@ -104,6 +122,9 @@ export default function StudentPointsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {filteredStudents.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground h-24">No students found{searchTerm ? ' matching your search' : ''}.</TableCell></TableRow>
+                )}
                 {filteredStudents.map((student) => (
                   <TableRow key={student.studentId}>
                     <TableCell>{student.studentId}</TableCell>
@@ -120,18 +141,17 @@ export default function StudentPointsPage() {
               </TableBody>
             </Table>
           </div>
-          {filteredStudents.length === 0 && <p className="text-center text-muted-foreground py-10">No students found matching your criteria.</p>}
         </CardContent>
       </Card>
 
-      {/* Adjust Points Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Adjust Points for {selectedStudent?.studentName}</DialogTitle>
-            <DialogDescription>Current Points: {selectedStudent?.points}</DialogDescription>
+            {/* <DialogDescription>Current Points: {selectedStudent?.points}</DialogDescription> */}
           </DialogHeader>
           <div className="py-4 space-y-4">
+            <p>Current Points: <strong>{selectedStudent?.points}</strong></p>
             <div>
               <Label htmlFor="changeType">Action Type</Label>
               <Select value={changeType} onValueChange={(value) => setChangeType(value as 'add' | 'deduct')}>
@@ -149,19 +169,16 @@ export default function StudentPointsPage() {
               <Input 
                 id="pointsChange" 
                 type="number" 
-                value={pointsChange.toString()} // Ensure value is a string
+                value={pointsChange.toString()}
                 onChange={(e) => {
-                  const rawValue = e.target.value;
-                  const num = parseInt(rawValue, 10);
-                  // If rawValue is empty or parsing results in NaN, set pointsChange to 0.
-                  // Otherwise, set to the parsed number, ensuring it's not negative.
+                  const num = parseInt(e.target.value, 10);
                   setPointsChange(isNaN(num) ? 0 : Math.max(0, num));
                 }}
                 min="0"
               />
             </div>
              <div>
-              <Label htmlFor="reason">Reason for Change (Optional)</Label>
+              <Label htmlFor="reason">Reason for Change</Label>
               <Input 
                 id="reason" 
                 type="text" 
@@ -180,4 +197,3 @@ export default function StudentPointsPage() {
     </div>
   );
 }
-

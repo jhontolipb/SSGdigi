@@ -6,24 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarDays, PlusCircle, Edit, Trash2, MoreHorizontal, UserCheck, Search } from "lucide-react";
+// Removed Select components as they are part of DropdownMenu or handled differently now
+import { CalendarDays, PlusCircle, Edit, Trash2, MoreHorizontal, Search } from "lucide-react"; // UserCheck removed as OIC assignment is direct
 import { useAuth } from '@/contexts/AuthContext';
 import type { Event, UserProfile } from '@/types/user';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-
-// Mock OICs - in a real app, these would be managed OICs for the club
-const mockClubOICs: UserProfile[] = [
-    { userID: 'oic001', fullName: 'Edward Scissorhands (OIC)', role: 'oic', departmentID: 'dept_bs_it' },
-    { userID: 'oic003', fullName: 'Gregory House (OIC)', role: 'oic', assignedClubId: 'club_robotics' }, // This OIC is specific to robotics club
-];
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'; // Added DropdownMenu components
 
 export default function ClubEventsPage() {
-  const { user, allUsers } = useAuth(); // Assuming allUsers has OICs
+  const { user, allUsers } = useAuth(); 
   const { toast } = useToast();
   const clubAdminClubId = user?.clubID;
 
@@ -36,19 +31,13 @@ export default function ClubEventsPage() {
     name: '', description: '', date: '', timeIn: '', timeOut: '', location: '', oicIds: [], sanctions: ''
   });
 
-  // Filter OICs available for this club (either OICs directly assigned to the club or general OICs)
   const availableOICs = allUsers.filter(u => u.role === 'oic' && (u.assignedClubId === clubAdminClubId || !u.assignedClubId));
 
-
-  // Simulate fetching/filtering events for this club
   useEffect(() => {
     if (clubAdminClubId) {
-      // In a real app, fetch events where organizerType is 'club' and organizerId is clubAdminClubId
-      // For now, we'll use a local state that's "scoped" to this club admin
-      const initialEvents: Event[] = [ // Placeholder, real app would persist these
-         { id: `evt_club_${clubAdminClubId}_1`, name: 'Club Meeting', description: 'Monthly general meeting', date: '2024-10-01', timeIn: '17:00', timeOut: '18:00', location: 'Club Room A', organizerType: 'club', organizerId: clubAdminClubId!, oicIds: [], sanctions: 'Attendance mandatory' },
-         { id: `evt_club_${clubAdminClubId}_2`, name: 'Club Workshop', description: 'Hands-on session', date: '2024-10-15', timeIn: '14:00', timeOut: '16:00', location: 'Lab 1', organizerType: 'club', organizerId: clubAdminClubId!, oicIds: ['oic003'], sanctions: 'Bring own materials' },
-      ];
+      // In a real app, fetch events from a backend
+      // For now, we start with an empty list for this club admin
+      const initialEvents: Event[] = []; // No mock events loaded initially
       setClubEvents(initialEvents.filter(e => e.organizerId === clubAdminClubId));
     }
   }, [clubAdminClubId]);
@@ -110,7 +99,7 @@ export default function ClubEventsPage() {
   
   const filteredClubEvents = clubEvents.filter(event =>
     event.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    event.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (event.description && event.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   if (!clubAdminClubId) {

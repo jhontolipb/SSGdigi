@@ -1,17 +1,14 @@
 
-// TODO: Implement Student Clearance Request page
-// Initiate clearance_requests.
-// Track the status of their clearance_requests.
-// Download/print their unified clearance document.
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileText, CheckCircle, XCircle, Clock, Download, PlusCircle, AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Keep Label import
+import { useAuth } from '@/contexts/AuthContext'; // For student data
 
 type ApprovalStageStatus = 'pending' | 'approved' | 'rejected' | 'not_started';
 
@@ -19,40 +16,46 @@ interface ClearanceStatus {
   club: { name: string, status: ApprovalStageStatus };
   department: { name: string, status: ApprovalStageStatus };
   ssg: { status: ApprovalStageStatus };
-  overallStatus: 'Pending' | 'Approved' | 'Rejected' | 'Action Required';
+  overallStatus: 'Pending' | 'Approved' | 'Rejected' | 'Action Required' | 'Not Requested';
   unifiedClearanceID?: string;
   sanctionsFlagged?: boolean;
   sanctionDetails?: string;
 }
 
-// Mock Data
-const mockClearance: ClearanceStatus = {
-  club: { name: 'Robotics Club', status: 'approved' },
-  department: { name: 'BS Information Technology', status: 'pending' },
-  ssg: { status: 'not_started' },
-  overallStatus: 'Pending',
-  sanctionsFlagged: true,
-  sanctionDetails: 'Missed mandatory club meeting on 2024-08-15 (Robotics Club). Resolution required.'
-};
-
-const mockNoClearance: ClearanceStatus | null = null; // For a student who hasn't started
+const initialClearanceStatus: ClearanceStatus | null = null;
 
 export default function StudentClearancePage() {
-  const [clearanceStatus, setClearanceStatus] = useState<ClearanceStatus | null>(mockClearance); // Start with mock data or null
+  const { user, allClubs, allDepartments } = useAuth();
+  const [clearanceStatus, setClearanceStatus] = useState<ClearanceStatus | null>(initialClearanceStatus);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Simulate fetching clearance status or setting initial state
+  useEffect(() => {
+    if (user && user.role === 'student') {
+      // In a real app, fetch this from a backend based on user.userID
+      // For now, we'll set a default "Not Requested" state or a mock initiated one.
+      // Let's assume it starts as null (not requested).
+      setClearanceStatus(null); 
+    }
+  }, [user]);
+
   const handleInitiateClearance = () => {
+    if (!user || user.role !== 'student') return;
     setIsLoading(true);
-    // Simulate API call
+    
     setTimeout(() => {
-      setClearanceStatus({ // Mock a newly initiated clearance
-        club: { name: 'Robotics Club', status: 'pending' }, // Assume student is part of this club
-        department: { name: 'BS Information Technology', status: 'pending' },
+      const studentClub = allClubs.find(club => club.id === user.clubID);
+      const studentDepartment = allDepartments.find(dept => dept.id === user.departmentID);
+
+      setClearanceStatus({ 
+        club: { name: studentClub?.name || 'N/A (No Club)', status: studentClub ? 'pending' : 'not_started' },
+        department: { name: studentDepartment?.name || 'N/A', status: 'pending' },
         ssg: { status: 'not_started' },
         overallStatus: 'Pending',
+        sanctionsFlagged: false, // Default to no sanctions initially
       });
       setIsLoading(false);
-    }, 1500);
+    }, 1000);
   };
   
   const getStatusIconAndColor = (status: ApprovalStageStatus) => {
@@ -60,17 +63,23 @@ export default function StudentClearancePage() {
       case 'approved': return { icon: <CheckCircle className="h-5 w-5 text-green-500" />, color: "text-green-600" };
       case 'rejected': return { icon: <XCircle className="h-5 w-5 text-red-500" />, color: "text-red-600" };
       case 'pending': return { icon: <Clock className="h-5 w-5 text-yellow-500 animate-pulse" />, color: "text-yellow-600" };
-      default: return { icon: <Clock className="h-5 w-5 text-gray-400" />, color: "text-gray-500" }; // not_started
+      default: return { icon: <Clock className="h-5 w-5 text-gray-400" />, color: "text-gray-500" }; 
     }
   };
   
   const calculateProgress = () => {
     if (!clearanceStatus) return 0;
     let completedSteps = 0;
+    let totalApplicableSteps = 1; // SSG is always applicable
+
+    if (clearanceStatus.club.status !== 'not_started') totalApplicableSteps++;
+    if (clearanceStatus.department.status !== 'not_started') totalApplicableSteps++;
+    
     if (clearanceStatus.club.status === 'approved') completedSteps++;
     if (clearanceStatus.department.status === 'approved') completedSteps++;
     if (clearanceStatus.ssg.status === 'approved') completedSteps++;
-    return (completedSteps / 3) * 100;
+    
+    return totalApplicableSteps > 0 ? (completedSteps / totalApplicableSteps) * 100 : 0;
   };
 
   return (
@@ -102,7 +111,7 @@ export default function StudentClearancePage() {
                         <div className="ml-3">
                             <h3 className="text-sm font-medium text-red-700">Action Required: Sanctions Pending</h3>
                             <div className="mt-2 text-sm text-red-600">
-                                <p>{clearanceStatus.sanctionDetails || "You have pending sanctions that need to be resolved before your clearance can be fully approved."}</p>
+                                <p>{clearanceStatus.sanctionDetails || "You have pending sanctions that need to be resolved."}</p>
                             </div>
                         </div>
                     </div>
@@ -117,15 +126,15 @@ export default function StudentClearancePage() {
 
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="text-lg font-semibold">Approval Stages:</h3>
-                {/* Club Approval */}
-                <div className="flex items-center justify-between p-3 border rounded-md bg-card">
-                  <div>
-                    <p className="font-medium">Club Clearance ({clearanceStatus.club.name})</p>
-                    <p className={`text-sm capitalize ${getStatusIconAndColor(clearanceStatus.club.status).color}`}>{clearanceStatus.club.status}</p>
-                  </div>
-                  {getStatusIconAndColor(clearanceStatus.club.status).icon}
-                </div>
-                {/* Department Approval */}
+                {clearanceStatus.club.status !== 'not_started' && (
+                    <div className="flex items-center justify-between p-3 border rounded-md bg-card">
+                    <div>
+                        <p className="font-medium">Club Clearance ({clearanceStatus.club.name})</p>
+                        <p className={`text-sm capitalize ${getStatusIconAndColor(clearanceStatus.club.status).color}`}>{clearanceStatus.club.status}</p>
+                    </div>
+                    {getStatusIconAndColor(clearanceStatus.club.status).icon}
+                    </div>
+                )}
                 <div className="flex items-center justify-between p-3 border rounded-md bg-card">
                   <div>
                     <p className="font-medium">Department Clearance ({clearanceStatus.department.name})</p>
@@ -133,7 +142,6 @@ export default function StudentClearancePage() {
                   </div>
                   {getStatusIconAndColor(clearanceStatus.department.status).icon}
                 </div>
-                {/* SSG Approval */}
                 <div className="flex items-center justify-between p-3 border rounded-md bg-card">
                   <div>
                     <p className="font-medium">SSG Final Approval</p>
@@ -148,8 +156,8 @@ export default function StudentClearancePage() {
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
                   <h3 className="text-xl font-semibold text-green-700">Clearance Approved!</h3>
                   <p className="text-muted-foreground mt-1">Unified Clearance ID: <strong>{clearanceStatus.unifiedClearanceID}</strong></p>
-                  <Button className="mt-4 bg-primary hover:bg-primary/90" onClick={() => alert(`Downloading PDF for ${clearanceStatus.unifiedClearanceID}`)}>
-                    <Download className="mr-2 h-4 w-4" /> Download Unified Clearance
+                  <Button className="mt-4 bg-primary hover:bg-primary/90" onClick={() => alert(`Downloading PDF for ${clearanceStatus.unifiedClearanceID}`)} disabled>
+                    <Download className="mr-2 h-4 w-4" /> Download Unified Clearance (Not Impl.)
                   </Button>
                 </div>
               ) : (
@@ -164,4 +172,3 @@ export default function StudentClearancePage() {
     </div>
   );
 }
-

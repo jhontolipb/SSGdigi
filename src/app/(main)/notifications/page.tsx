@@ -1,22 +1,13 @@
 
 "use client";
 
-import { useState, useEffect }
-from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
 import { BellRing, Check } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-// Mock notifications
-const mockNotificationsData = [
-  { id: '1', text: 'Your attendance for "Tech Summit" is marked.', read: false, time: '10m ago', type: 'attendance' },
-  { id: '2', text: 'New message from SSG Admin regarding upcoming survey.', read: false, time: '1h ago', type: 'message' },
-  { id: '3', text: 'Clearance for "Robotics Club" has been approved.', read: true, time: '2d ago', type: 'clearance' },
-  { id: '4', text: 'Event "Campus Clean-up Drive" has been announced for next Saturday.', read: false, time: '3d ago', type: 'event' },
-  { id: '5', text: 'Reminder: Submit your project proposal by Friday.', read: true, time: '4d ago', type: 'general' },
-  { id: '6', text: 'Your department clearance is pending approval.', read: false, time: '5d ago', type: 'clearance' },
-];
+const initialNotificationsData: NotificationItem[] = [];
 
 interface NotificationItem {
   id: string;
@@ -27,12 +18,12 @@ interface NotificationItem {
 }
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotificationsData);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Simulate fetching notifications
-    setNotifications(mockNotificationsData);
+    // In a real app, fetch notifications
+    setNotifications(initialNotificationsData);
     setMounted(true);
   }, []);
 
@@ -60,7 +51,7 @@ export default function NotificationsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex justify-end mb-4">
-            <Button onClick={markAllAsRead} variant="outline" size="sm" disabled={notifications.every(n => n.read)}>
+            <Button onClick={markAllAsRead} variant="outline" size="sm" disabled={notifications.every(n => n.read) || notifications.length === 0}>
               <Check className="mr-2 h-4 w-4" /> Mark all as read
             </Button>
           </div>

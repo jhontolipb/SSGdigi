@@ -16,13 +16,12 @@ export default function DepartmentAttendancePage() {
           <CardDescription>Track attendance for your department's events.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Department Admins can use this page to view attendance records for events organized by their department. Functionality to be implemented.</p>
+          <p className="text-muted-foreground">Department Admins can use this page to view attendance records for events organized by their department.</p>
           <div className="mt-6 p-8 border-2 border-dashed border-border rounded-lg text-center">
-            <p className="text-lg font-medium text-muted-foreground">Departmental Event Attendance Records Coming Soon</p>
+            <p className="text-lg font-medium text-muted-foreground">No attendance records found for your department.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

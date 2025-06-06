@@ -5,10 +5,10 @@ import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
 import Link from "next/link";
 
 const deptAdminStats = {
-  departmentStudents: 350,
-  activeEvents: 3,
-  pendingClearances: 12,
-  recentMessages: 5,
+  departmentStudents: 0,
+  activeEvents: 0,
+  pendingClearances: 0,
+  recentMessages: 0,
 };
 
 const quickLinks = [
@@ -20,12 +20,11 @@ const quickLinks = [
 
 
 export default function DepartmentAdminDashboardPage() {
-  // In a real app, fetch the department name associated with this admin
-  const departmentName = "Your Department"; 
+  const departmentName = "Department"; 
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-headline font-semibold">{departmentName} - Admin Dashboard</h1>
+      <h1 className="text-3xl font-headline font-semibold">{departmentName} Admin Dashboard</h1>
       
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -84,10 +83,9 @@ export default function DepartmentAdminDashboardPage() {
        <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Department Activity Feed</CardTitle>
-            <CardDescription>(Placeholder for recent department activities)</CardDescription>
           </CardHeader>
           <CardContent className="h-40 flex items-center justify-center bg-muted/30 rounded-md">
-            <p className="text-muted-foreground">Department activity updates will appear here.</p>
+            <p className="text-muted-foreground">No recent department activity.</p>
           </CardContent>
         </Card>
     </div>

@@ -1,101 +1,103 @@
 
-// TODO: Implement SSG Admin Club Management page
-// This page will allow SSG Admins to CRUD clubs and assign club_admin users.
-// Similar structure to Department Management, but with club-specific fields
-// and association with departments (optional).
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Shield, PlusCircle, Edit, Trash2, MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import type { Club, Department, UserProfile } from '@/types/user';
-import { PredefinedDepartments } from '@/contexts/AuthContext'; // Using this for department list
+import type { Club, UserProfile } from '@/types/user';
+import { useAuth } from '@/contexts/AuthContext'; 
+import { useToast } from '@/hooks/use-toast';
 
-// Mock data - replace with actual data fetching
-const mockInitialClubs: Club[] = [
-  { id: 'club1', name: 'Robotics Club', departmentId: PredefinedDepartments[1].id },
-  { id: 'club2', name: 'Tourism Society', departmentId: PredefinedDepartments[0].id },
-  { id: 'club3', name: 'Debate Club' }, // No department assigned
-];
-
-const mockClubAdmins: UserProfile[] = [ // Filtered for club_admin role
-    { userID: 'user1', email: 'clubadmin1@example.com', fullName: 'Alice Wonderland', role: 'club_admin', clubID: 'club1' },
-    { userID: 'user6', email: 'clubadmin2@example.com', fullName: 'Edward Scissorhands', role: 'club_admin', clubID: 'club2' },
-];
-
-const SELECT_NONE_VALUE = "@_NONE_@"; // Special value for "None" selection
+const SELECT_NONE_VALUE = "@_NONE_@";
 
 export default function ClubManagementPage() {
-  const [clubs, setClubs] = useState<Club[]>(mockInitialClubs);
+  const { allClubs, allDepartments, allUsers, addUser, updateUser, deleteUser } = useAuth(); // Assuming CRUD for clubs will be added to AuthContext if needed, or handled locally. For now, local.
+  const { toast } = useToast();
+
+  const [clubs, setClubs] = useState<Club[]>(allClubs || []);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingClub, setEditingClub] = useState<Club | null>(null);
   
-  // Form state
   const [clubName, setClubName] = useState('');
+  const [clubDescription, setClubDescription] = useState('');
   const [departmentId, setDepartmentId] = useState<string | undefined>(undefined);
-  const [assignedAdmin, setAssignedAdmin] = useState<string | undefined>(undefined); // UserID of assigned club_admin
+  const [assignedAdminId, setAssignedAdminId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setClubs(allClubs || []);
+  }, [allClubs]);
+
+  const availableAdmins = allUsers.filter(u => u.role === 'club_admin');
 
   const handleCreateNew = () => {
     setEditingClub(null);
     setClubName('');
+    setClubDescription('');
     setDepartmentId(undefined);
-    setAssignedAdmin(undefined);
+    setAssignedAdminId(undefined);
     setIsFormOpen(true);
   };
 
   const handleEdit = (club: Club) => {
     setEditingClub(club);
     setClubName(club.name);
+    setClubDescription(club.description || '');
     setDepartmentId(club.departmentId);
-    // Find assigned admin for this club
-    const admin = mockClubAdmins.find(a => a.clubID === club.id);
-    setAssignedAdmin(admin?.userID);
+    const admin = allUsers.find(a => a.role === 'club_admin' && a.clubID === club.id);
+    setAssignedAdminId(admin?.userID);
     setIsFormOpen(true);
   };
 
-  const handleDelete = (clubId: string) => {
+  const handleDeleteClub = (clubId: string) => {
      if (window.confirm("Are you sure you want to delete this club?")) {
-      setClubs(prev => prev.filter(c => c.id !== clubId));
-      // Also potentially unassign admin if any
+      // In real app, call context/API to delete club
+      setClubs(prev => prev.filter(c => c.id !== clubId)); 
+      // Also unassign admin if any (mock)
+      const adminToUnassign = allUsers.find(u => u.clubID === clubId);
+      if (adminToUnassign) {
+        updateUser({ ...adminToUnassign, clubID: undefined });
+      }
+      toast({title: "Club Deleted", description: "The club has been removed."});
     }
   };
 
   const handleSubmit = () => {
     if (!clubName.trim()) {
-      alert("Club name cannot be empty.");
+      toast({ title: "Error", description: "Club name cannot be empty.", variant: "destructive" });
       return;
     }
     if (editingClub) {
-      setClubs(prev => prev.map(c => c.id === editingClub.id ? { ...c, name: clubName, departmentId: departmentId || undefined } : c));
-      // Handle admin assignment update here (mock)
-      // This mock logic needs refinement to correctly unassign previous admin if a new one is chosen or "None" is selected.
-      mockClubAdmins.forEach(admin => {
-        if (admin.clubID === editingClub.id && admin.userID !== assignedAdmin) {
-          admin.clubID = undefined; // Unassign old admin if different or if new is None
-        }
-      });
-      const adminToUpdate = mockClubAdmins.find(a => a.userID === assignedAdmin);
-      if (adminToUpdate) adminToUpdate.clubID = editingClub.id;
-
-
+      const updatedClub = { ...editingClub, name: clubName, description: clubDescription || undefined, departmentId: departmentId || undefined };
+      setClubs(prev => prev.map(c => c.id === editingClub.id ? updatedClub : c));
+      // Handle admin assignment update
+      const oldAdmin = allUsers.find(u => u.clubID === editingClub.id && u.userID !== assignedAdminId);
+      if (oldAdmin) updateUser({ ...oldAdmin, clubID: undefined });
+      if (assignedAdminId) {
+        const newAdmin = allUsers.find(u => u.userID === assignedAdminId);
+        if (newAdmin) updateUser({ ...newAdmin, clubID: editingClub.id });
+      }
+      toast({title: "Club Updated", description: `${updatedClub.name} has been updated.`});
     } else {
+      const newClubId = `club_${Date.now()}`;
       const newClub: Club = {
-        id: `club_${Date.now()}`,
+        id: newClubId,
         name: clubName,
+        description: clubDescription || undefined,
         departmentId: departmentId || undefined,
       };
       setClubs(prev => [...prev, newClub]);
-      // Handle admin assignment for new club (mock)
-      const adminToAssign = mockClubAdmins.find(a => a.userID === assignedAdmin);
-      if (adminToAssign) adminToAssign.clubID = newClub.id;
+      if (assignedAdminId) {
+        const adminToAssign = allUsers.find(a => a.userID === assignedAdminId);
+        if (adminToAssign) updateUser({ ...adminToAssign, clubID: newClubId });
+      }
+      toast({title: "Club Created", description: `${newClub.name} has been created.`});
     }
     setIsFormOpen(false);
   };
@@ -129,9 +131,14 @@ export default function ClubManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {clubs.length === 0 && (
+                    <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground h-24">No clubs found. Add one to get started.</TableCell>
+                    </TableRow>
+                )}
                 {clubs.map((club) => {
-                  const dept = PredefinedDepartments.find(d => d.id === club.departmentId);
-                  const admin = mockClubAdmins.find(a => a.clubID === club.id);
+                  const dept = allDepartments.find(d => d.id === club.departmentId);
+                  const admin = allUsers.find(a => a.role === 'club_admin' && a.clubID === club.id);
                   return (
                     <TableRow key={club.id}>
                       <TableCell className="font-medium">{club.name}</TableCell>
@@ -148,7 +155,7 @@ export default function ClubManagementPage() {
                             <DropdownMenuItem onClick={() => handleEdit(club)}>
                               <Edit className="mr-2 h-4 w-4" /> Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDelete(club.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                            <DropdownMenuItem onClick={() => handleDeleteClub(club.id)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
                               <Trash2 className="mr-2 h-4 w-4" /> Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -160,7 +167,6 @@ export default function ClubManagementPage() {
               </TableBody>
             </Table>
           </div>
-          {clubs.length === 0 && <p className="text-center text-muted-foreground py-10">No clubs found. Add one to get started.</p>}
         </CardContent>
       </Card>
 
@@ -175,9 +181,13 @@ export default function ClubManagementPage() {
               <Input id="clubName" value={clubName} onChange={(e) => setClubName(e.target.value)} placeholder="e.g., Chess Club" />
             </div>
             <div>
+              <Label htmlFor="clubDescription">Club Description (Optional)</Label>
+              <Input id="clubDescription" value={clubDescription} onChange={(e) => setClubDescription(e.target.value)} placeholder="e.g., A club for chess enthusiasts." />
+            </div>
+            <div>
               <Label htmlFor="departmentId">Associated Department (Optional)</Label>
               <Select 
-                value={departmentId || ''} 
+                value={departmentId || SELECT_NONE_VALUE} 
                 onValueChange={(val) => setDepartmentId(val === SELECT_NONE_VALUE ? undefined : val)}
               >
                 <SelectTrigger>
@@ -185,25 +195,24 @@ export default function ClubManagementPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={SELECT_NONE_VALUE}>None</SelectItem>
-                  {PredefinedDepartments.map(dept => (
+                  {allDepartments.map(dept => (
                     <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label htmlFor="assignedAdmin">Assign Club Admin</Label>
+              <Label htmlFor="assignedAdminId">Assign Club Admin</Label>
               <Select 
-                value={assignedAdmin || ''} 
-                onValueChange={(val) => setAssignedAdmin(val === SELECT_NONE_VALUE ? undefined : val)}
+                value={assignedAdminId || SELECT_NONE_VALUE} 
+                onValueChange={(val) => setAssignedAdminId(val === SELECT_NONE_VALUE ? undefined : val)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Club Admin" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={SELECT_NONE_VALUE}>None</SelectItem>
-                  {/* Filter for users with club_admin role who are not already assigned OR current admin */}
-                  {mockClubAdmins.filter(admin => admin.role === 'club_admin' && (!admin.clubID || admin.clubID === editingClub?.id)).map(admin => (
+                  {availableAdmins.filter(admin => !admin.clubID || admin.clubID === editingClub?.id || admin.userID === assignedAdminId).map(admin => (
                     <SelectItem key={admin.userID} value={admin.userID}>{admin.fullName} ({admin.email})</SelectItem>
                   ))}
                 </SelectContent>

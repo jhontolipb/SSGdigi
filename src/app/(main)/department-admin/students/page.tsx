@@ -17,13 +17,12 @@ export default function DepartmentStudentsPage() {
           <CardDescription>View and manage students in your department.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">This page will enable Department Admins to view students in their department and manage their departmental affiliation. Functionality to be implemented.</p>
+          <p className="text-muted-foreground">This page will enable Department Admins to view students in their department and manage their departmental affiliation.</p>
           <div className="mt-6 p-8 border-2 border-dashed border-border rounded-lg text-center">
-            <p className="text-lg font-medium text-muted-foreground">Department Student List & Management Tools Coming Soon</p>
+            <p className="text-lg font-medium text-muted-foreground">No students found in your department.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

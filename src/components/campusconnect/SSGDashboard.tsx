@@ -2,16 +2,16 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity } from 'lucide-react';
+import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity, Icon } from 'lucide-react'; // Added Icon
 import Link from "next/link";
 import Image from "next/image";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Added Avatar for fallback
 
-// Mock data - replace with actual data fetching
 const ssgStats = {
-  totalStudents: 1250,
-  activeEvents: 5,
-  pendingClearances: 23,
-  recentMessages: 8,
+  totalStudents: 0,
+  activeEvents: 0,
+  pendingClearances: 0,
+  recentMessages: 0,
 };
 
 const quickLinks = [
@@ -21,11 +21,8 @@ const quickLinks = [
   { href: '/messages', label: 'View Messages', icon: MessageSquare },
 ];
 
-const recentActivity = [
-    { id: 1, description: "New student registration: John Doe", time: "10m ago", dataAiHint: "profile activity" },
-    { id: 2, description: "Event 'Tech Summit 2024' created", time: "1h ago", dataAiHint: "event calendar" },
-    { id: 3, description: "Clearance request approved for Jane Smith", time: "3h ago", dataAiHint: "document checkmark" },
-    { id: 4, description: "5 new messages in SSG inbox", time: "yesterday", dataAiHint: "message notification" },
+const recentActivity: { id: number; description: string; time: string; icon?: React.ElementType }[] = [
+    // No mock activity
 ];
 
 
@@ -34,7 +31,6 @@ export function SSGDashboard() {
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">SSG Admin Dashboard</h1>
       
-      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -43,7 +39,7 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.totalStudents}</div>
-            <p className="text-xs text-muted-foreground">+20 since last week</p>
+            {/* <p className="text-xs text-muted-foreground">+0 since last week</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -53,7 +49,7 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.activeEvents}</div>
-            <p className="text-xs text-muted-foreground">2 upcoming this week</p>
+            {/* <p className="text-xs text-muted-foreground">0 upcoming this week</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -63,7 +59,7 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.pendingClearances}</div>
-            <p className="text-xs text-muted-foreground">Needs attention</p>
+            {/* <p className="text-xs text-muted-foreground">Needs attention</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -73,12 +69,11 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.recentMessages}</div>
-            <p className="text-xs text-muted-foreground">Unread</p>
+            {/* <p className="text-xs text-muted-foreground">Unread</p> */}
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Links & Recent Activity */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="shadow-md">
           <CardHeader>
@@ -103,18 +98,16 @@ export function SSGDashboard() {
             <CardDescription>Latest updates and actions in the system</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {recentActivity.length === 0 && (
+                <p className="text-muted-foreground text-center py-4">No recent activity.</p>
+            )}
             {recentActivity.map(activity => (
               <div key={activity.id} className="flex items-start space-x-3">
-                <div className="flex-shrink-0 pt-1">
-                  <Image 
-                    src={`https://placehold.co/32x32.png?text=${activity.description.substring(0,1)}`} 
-                    alt="Activity icon" 
-                    width={32} 
-                    height={32}
-                    data-ai-hint={activity.dataAiHint}
-                    className="rounded-full"
-                  />
-                </div>
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarFallback>
+                    {activity.icon ? <activity.icon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                  </AvatarFallback>
+                </Avatar>
                 <div>
                   <p className="text-sm">{activity.description}</p>
                   <p className="text-xs text-muted-foreground">{activity.time}</p>
@@ -125,14 +118,13 @@ export function SSGDashboard() {
         </Card>
       </div>
 
-      {/* Placeholder for Charts/Graphs */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><BarChart3 className="text-primary"/> System Analytics</CardTitle>
-          <CardDescription>Overview of system usage and trends (Placeholder)</CardDescription>
+          <CardDescription>Overview of system usage and trends</CardDescription>
         </CardHeader>
         <CardContent className="h-64 flex items-center justify-center bg-muted/30 rounded-md">
-          <p className="text-muted-foreground">Chart data will be displayed here.</p>
+          <p className="text-muted-foreground">Analytics charts will be displayed here.</p>
         </CardContent>
       </Card>
     </div>

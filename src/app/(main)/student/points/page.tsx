@@ -5,27 +5,27 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Award, Star, TrendingUp, TrendingDown, History } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useState, useEffect } from 'react'; // Added for state
 
-// Mock Data
 interface PointTransaction {
   id: string;
   date: string;
   description: string;
-  points: number; // Positive for earned, negative for deducted
+  points: number; 
   type: 'earned' | 'deducted' | 'adjustment';
 }
 
-const mockPointsHistory: PointTransaction[] = [
-  { id: 'tx1', date: '2024-09-01', description: 'Participation: SSG Orientation', points: 10, type: 'earned' },
-  { id: 'tx2', date: '2024-08-25', description: 'Volunteering: Campus Clean-up', points: 20, type: 'earned' },
-  { id: 'tx3', date: '2024-08-15', description: 'Sanction: Missed Club Meeting', points: -5, type: 'deducted' },
-  { id: 'tx4', date: '2024-07-30', description: 'Academic Achievement Award', points: 50, type: 'earned' },
-  { id: 'tx5', date: '2024-07-20', description: 'Late Submission Penalty', points: -10, type: 'deducted' },
-];
+const initialPointsHistory: PointTransaction[] = [];
 
 export default function StudentPointsPage() {
   const { user } = useAuth();
-  const currentPoints = user?.points ?? 0; // Get points from auth context or default to 0
+  const currentPoints = user?.points ?? 0; 
+  const [pointsHistory, setPointsHistory] = useState<PointTransaction[]>(initialPointsHistory);
+
+  useEffect(() => {
+    // In a real app, fetch points history for the logged-in user
+    setPointsHistory(initialPointsHistory); 
+  }, [user]);
 
   return (
     <div className="space-y-6">
@@ -37,7 +37,7 @@ export default function StudentPointsPage() {
            <p className="text-sm text-muted-foreground">Keep track of your earned and deducted points.</p>
         </CardHeader>
         <CardContent>
-            {/* Could add some gamification elements here like progress to next reward tier */}
+            {/* Gamification elements placeholder */}
         </CardContent>
       </Card>
 
@@ -49,7 +49,7 @@ export default function StudentPointsPage() {
             <CardDescription>Detailed log of your point transactions.</CardDescription>
         </CardHeader>
         <CardContent>
-            {mockPointsHistory.length === 0 ? (
+            {pointsHistory.length === 0 ? (
                 <p className="text-center text-muted-foreground py-10">No points history available yet.</p>
             ) : (
                  <div className="overflow-x-auto">
@@ -63,7 +63,7 @@ export default function StudentPointsPage() {
                         </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {mockPointsHistory.map((transaction) => (
+                        {pointsHistory.map((transaction) => (
                             <TableRow key={transaction.id}>
                             <TableCell>{transaction.date}</TableCell>
                             <TableCell className="font-medium">{transaction.description}</TableCell>
@@ -86,4 +86,3 @@ export default function StudentPointsPage() {
     </div>
   );
 }
-

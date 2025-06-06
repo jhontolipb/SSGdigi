@@ -1,54 +1,44 @@
 
-// TODO: Implement SSG Admin Event Management page
-// This page will allow SSG Admins to CRUD events, assign OICs, define sanctions.
-// It should display a list of all events (SSG, Club, Departmental).
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { CalendarDays, PlusCircle, Edit, Trash2, MoreHorizontal, UserCheck, Users } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Event, UserProfile } from '@/types/user'; // Assuming Event type exists
+import { CalendarDays, PlusCircle, Edit, Trash2, MoreHorizontal } from "lucide-react"; // Removed UserCheck, Users
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"; // Added DropdownMenu components
+// Select components are not directly used here, Checkbox is used for OICs
+import type { Event, UserProfile } from '@/types/user'; 
 import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
-
-// Mock data
-const mockEvents: Event[] = [
-  { id: 'event1', name: 'SSG General Assembly', description: 'Annual general assembly for all students.', date: '2024-09-15', timeIn: '09:00', timeOut: '12:00', organizerType: 'ssg', organizerId: 'ssg_main', oicIds: ['oic1', 'oic2'], sanctions: '10 points deduction for unexcused absence.' },
-  { id: 'event2', name: 'Robotics Club Workshop', description: 'Intro to Arduino programming.', date: '2024-09-20', timeIn: '13:00', timeOut: '16:00', organizerType: 'club', organizerId: 'club1', oicIds: ['oic3'], sanctions: 'Club membership review.' },
-  { id: 'event3', name: 'IT Department Seminar', description: 'Guest lecture on AI trends.', date: '2024-09-25', timeIn: '10:00', timeOut: '11:30', organizerType: 'department', organizerId: 'dept_bs_it', oicIds: ['oic1'], sanctions: 'None' },
-];
-
-const mockOICs: UserProfile[] = [ // Filtered for OIC role
-    { userID: 'oic1', fullName: 'Charlie Chaplin', role: 'oic', email: 'oic1@example.com' },
-    { userID: 'oic2', fullName: 'David Copperfield', role: 'oic', email: 'oic2@example.com' },
-    { userID: 'oic3', fullName: 'Eve Adams', role: 'oic', email: 'oic3@example.com' },
-];
+const initialEvents: Event[] = [];
 
 export default function EventManagementPage() {
-  const [events, setEvents] = useState<Event[]>(mockEvents);
+  const { allUsers, allEvents, addEvent, updateEvent, deleteEvent } = useAuth(); // Using event functions from context
+  const { toast } = useToast();
+
+  const [events, setEvents] = useState<Event[]>(allEvents || initialEvents);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   
-  // Form state
   const [formData, setFormData] = useState<Partial<Event>>({
     name: '', description: '', date: '', timeIn: '', timeOut: '', organizerType: 'ssg', organizerId: 'ssg_main', oicIds: [], sanctions: ''
   });
 
+  useEffect(() => {
+    setEvents(allEvents || initialEvents);
+  }, [allEvents]);
+  
+  const availableOICs = allUsers.filter(u => u.role === 'oic');
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
   };
   
   const handleOICChange = (oicId: string) => {
@@ -75,20 +65,30 @@ export default function EventManagementPage() {
 
   const handleDelete = (eventId: string) => {
     if (window.confirm("Are you sure you want to delete this event?")) {
-      setEvents(prev => prev.filter(e => e.id !== eventId));
+      deleteEvent(eventId); // Use context function
+      toast({title: "Event Deleted", description: "The event has been removed."});
     }
   };
 
   const handleSubmit = () => {
-    // Add validation here
+    if (!formData.name || !formData.date || !formData.timeIn || !formData.timeOut) {
+        toast({title: "Error", description: "Event name, date, and times are required.", variant: "destructive"});
+        return;
+    }
     if (editingEvent) {
-      setEvents(prev => prev.map(e => e.id === editingEvent.id ? { ...e, ...formData } as Event : e));
+      const updatedEventData = { ...editingEvent, ...formData } as Event;
+      updateEvent(updatedEventData); // Use context function
+      toast({title: "Event Updated", description: `${updatedEventData.name} has been updated.`});
     } else {
-      const newEvent: Event = {
+      const newEventData: Event = {
         id: `event_${Date.now()}`,
         ...formData,
+        // Ensure organizerType and organizerId are correctly set for SSG-created events
+        organizerType: formData.organizerType || 'ssg', 
+        organizerId: formData.organizerId || 'ssg_main',
       } as Event;
-      setEvents(prev => [...prev, newEvent]);
+      addEvent(newEventData); // Use context function
+      toast({title: "Event Created", description: `${newEventData.name} has been created.`});
     }
     setIsFormOpen(false);
   };
@@ -115,19 +115,22 @@ export default function EventManagementPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Event Name</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead>Organizer</TableHead>
                   <TableHead>OICs</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {events.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground h-24">No events found. Create one to get started.</TableCell></TableRow>
+                )}
                 {events.map((event) => (
                   <TableRow key={event.id}>
                     <TableCell className="font-medium">{event.name}</TableCell>
                     <TableCell>{event.date} ({event.timeIn} - {event.timeOut})</TableCell>
                     <TableCell className="capitalize">{event.organizerType}</TableCell>
-                    <TableCell>{event.oicIds.length} assigned</TableCell>
+                    <TableCell>{event.oicIds?.length || 0} assigned</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -142,7 +145,6 @@ export default function EventManagementPage() {
               </TableBody>
             </Table>
           </div>
-           {events.length === 0 && <p className="text-center text-muted-foreground py-10">No events found. Create one to get started.</p>}
         </CardContent>
       </Card>
 
@@ -159,16 +161,31 @@ export default function EventManagementPage() {
               <div><Label htmlFor="timeIn">Time In</Label><Input id="timeIn" name="timeIn" type="time" value={formData.timeIn || ''} onChange={handleInputChange} /></div>
               <div><Label htmlFor="timeOut">Time Out</Label><Input id="timeOut" name="timeOut" type="time" value={formData.timeOut || ''} onChange={handleInputChange} /></div>
             </div>
-            {/* Organizer fields are pre-filled for SSG admin creating SSG events */}
-            {/* For a more complex system, these would be selectable */}
-            <input type="hidden" name="organizerType" value="ssg" />
-            <input type="hidden" name="organizerId" value="ssg_main" />
+            <div><Label htmlFor="location">Location</Label><Input id="location" name="location" value={formData.location || ''} onChange={handleInputChange} /></div>
+
+            {/* For SSG Admin, they can create SSG, Club, or Department events */}
+            {/* This part could be enhanced with dynamic selection of organizerId based on type */}
+            <div>
+              <Label htmlFor="organizerType">Organizer Type</Label>
+              <select id="organizerType" name="organizerType" value={formData.organizerType || 'ssg'} onChange={(e) => setFormData(prev => ({...prev, organizerType: e.target.value as Event['organizerType'], organizerId: e.target.value === 'ssg' ? 'ssg_main' : ''}))} className="w-full p-2 border rounded-md">
+                <option value="ssg">SSG</option>
+                <option value="club">Club</option>
+                <option value="department">Department</option>
+              </select>
+            </div>
+             {formData.organizerType !== 'ssg' && (
+                 <div>
+                     <Label htmlFor="organizerId">Organizer ID (Club/Dept ID)</Label>
+                     <Input id="organizerId" name="organizerId" value={formData.organizerId || ''} onChange={handleInputChange} placeholder={`Enter ${formData.organizerType} ID`} />
+                 </div>
+             )}
             
             <div>
                 <Label>Assign OICs</Label>
                 <Card className="mt-1 p-3 max-h-40 overflow-y-auto">
                     <div className="space-y-2">
-                    {mockOICs.map(oic => (
+                    {availableOICs.length === 0 && <p className="text-sm text-muted-foreground">No OICs available.</p>}
+                    {availableOICs.map(oic => (
                         <div key={oic.userID} className="flex items-center space-x-2">
                             <Checkbox 
                                 id={`oic-${oic.userID}`} 

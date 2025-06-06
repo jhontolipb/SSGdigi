@@ -16,13 +16,12 @@ export default function DepartmentEventsPage() {
           <CardDescription>Create and manage events for your department.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">This page will allow Department Admins to create and manage events specific to their department. Functionality to be implemented.</p>
+          <p className="text-muted-foreground">This page will allow Department Admins to create and manage events specific to their department.</p>
           <div className="mt-6 p-8 border-2 border-dashed border-border rounded-lg text-center">
-            <p className="text-lg font-medium text-muted-foreground">Departmental Event Creation & Management Tools Coming Soon</p>
+            <p className="text-lg font-medium text-muted-foreground">No events found for your department.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-

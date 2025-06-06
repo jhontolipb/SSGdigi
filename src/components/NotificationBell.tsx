@@ -15,20 +15,27 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useState, useEffect } from 'react';
 
-// Mock notifications
-const mockNotifications = [
-  { id: '1', text: 'Your attendance for "Tech Summit" is marked.', read: false, time: '10m ago' },
-  { id: '2', text: 'New message from SSG Admin.', read: false, time: '1h ago' },
-  { id: '3', text: 'Clearance for "Robotics Club" approved.', read: true, time: '2d ago' },
-];
+interface NotificationItem {
+ id: string;
+ text: string;
+ read: boolean;
+ time: string;
+}
+
+const initialNotifications: NotificationItem[] = [];
 
 export function NotificationBell() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState(initialNotifications);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    // In a real app, fetch notifications
+    setNotifications(initialNotifications);
+  }, []);
+
+  useEffect(() => {
     setUnreadCount(notifications.filter(n => !n.read).length);
   }, [notifications]);
 
