@@ -265,13 +265,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerStudent = async (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
     setLoading(true);
     try {
-      const usersQuery = query(collection(db, "users"), where("email", "==", email));
-      const querySnapshot = await getDocs(usersQuery);
-      if (!querySnapshot.empty) {
-        toast({ title: "Registration Failed", description: "Email already associated with a profile.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+      // Firestore check for existing email in profiles is not strictly necessary here
+      // as Firebase Auth handles 'auth/email-already-in-use'.
+      // If you wanted a custom check for profile data, it would go here.
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
@@ -291,7 +287,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await fetchUsers();
     } catch (error: any) {
       console.error("Registration error", error);
-      toast({ title: "Registration Failed", description: error.message || "Could not create account.", variant: "destructive" });
+      if (error.code === 'auth/email-already-in-use') {
+        toast({ title: "Registration Failed", description: "This email address is already in use. Please try a different email or login.", variant: "destructive" });
+      } else {
+        toast({ title: "Registration Failed", description: error.message || "Could not create account.", variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }
@@ -415,7 +415,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return createdAuthUserUid;
     } catch (error: any) {
       console.error("Error creating user (Auth/Firestore):", error);
-      toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
+      if (error.code === 'auth/email-already-in-use') {
+        toast({ title: "Creation Failed", description: "This email address is already registered in Firebase Authentication.", variant: "destructive" });
+      } else {
+        toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
+      }
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
@@ -978,7 +982,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({ title: "Messaging Error", description: "Could not load messages for this conversation.", variant: "destructive" });
     });
     return unsubscribe;
-  }, [toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // SelectedConversationId is not needed here as it's passed as arg
 
   const sendMessageToConversation = async (conversationId: string, messageText: string) => {
     if (!user) {
