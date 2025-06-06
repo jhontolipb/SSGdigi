@@ -15,10 +15,10 @@ import type { UserProfile } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
-const defaultOICPassword = "password123";
+const defaultOICPassword = "password123"; // Default password for new OICs
 
 export default function SSGOICManagementPage() {
-  const { allUsers, updateUser, addUser, deleteUser, allClubs, allDepartments } = useAuth();
+  const { allUsers, updateUser, addUser, deleteUser, allDepartments } = useAuth(); // Removed allClubs as it's not directly managed here
   const { toast } = useToast();
 
   const [oicUsers, setOicUsers] = useState<UserProfile[]>([]);
@@ -28,7 +28,7 @@ export default function SSGOICManagementPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
 
-  const [formData, setFormData] = useState<Partial<UserProfile>>({
+  const [formData, setFormData] = useState<Partial<UserProfile> & { password?: string }>({
     fullName: '', email: '', role: 'oic', password: '', departmentID: undefined
   });
 
@@ -59,37 +59,38 @@ export default function SSGOICManagementPage() {
      setFormData(prev => ({ ...prev, [name]: val }));
   }
 
-  const handleSubmitForm = () => {
+  const handleSubmitForm = async () => {
     if (!formData.fullName || !formData.email) {
       toast({ title: "Error", description: "Full name and email are required.", variant: "destructive" });
       return;
     }
+    
+    const profileDataToSubmit: Partial<UserProfile> & { password?: string } = {
+      ...formData,
+      role: 'oic', // Ensure role is always OIC
+      departmentID: formData.departmentID || undefined, // Ensure undefined if empty/none
+      // assignedClubId should not be set from this SSG admin form
+    };
+    // Remove assignedClubId explicitly if it exists in formData to prevent accidental updates from stale state
+    if ('assignedClubId' in profileDataToSubmit) {
+        delete profileDataToSubmit.assignedClubId;
+    }
+
+
     if (editingUser) {
-      // Ensure assignedClubId is not part of the update from SSG Admin form
-      const { assignedClubId, ...safeFormData } = formData;
-      const userToUpdate: UserProfile = { 
-        ...editingUser, 
-        ...safeFormData, 
-        password: formData.password ? formData.password : editingUser.password,
-        departmentID: formData.departmentID || undefined,
-        role: 'oic', 
-      };
-      updateUser(userToUpdate, editingUser.userID);
-      toast({ title: "Success", description: "OIC updated successfully." });
+      const { password, ...profileUpdates } = profileDataToSubmit;
+      // Do not pass password for update if it's empty, keep existing password
+      const updatesToSend = password ? profileDataToSubmit : profileUpdates;
+
+      await updateUser(updatesToSend, editingUser.userID);
+      // Toast is handled by updateUser
     } else {
-      if (!formData.password) { 
-        formData.password = defaultOICPassword; 
+      if (!profileDataToSubmit.password) { 
+        profileDataToSubmit.password = defaultOICPassword; 
       }
-      // Ensure assignedClubId is not part of the creation from SSG Admin form
-      const { assignedClubId, ...safeFormData } = formData;
-      const newUser: UserProfile = {
-        userID: `user${Date.now()}`,
-        ...safeFormData,
-        departmentID: formData.departmentID || undefined,
-        role: 'oic', 
-      } as UserProfile; // Cast as UserProfile, userID will be added
-      addUser(newUser, formData.password);
-      toast({ title: "Success", description: "OIC created successfully." });
+      const { password, ...newProfile } = profileDataToSubmit;
+      await addUser(newProfile as Omit<UserProfile, 'userID' | 'password'>, password);
+      // Toast is handled by addUser
     }
     setIsFormOpen(false);
     setEditingUser(null);
@@ -102,9 +103,9 @@ export default function SSGOICManagementPage() {
         fullName: user.fullName, 
         email: user.email, 
         role: 'oic', 
-        departmentID: user.departmentID || undefined, 
-        // Do not load assignedClubId into the SSG form
-        password: '' 
+        departmentID: user.departmentID || undefined,
+        password: '' // Clear password for edit form, only set if changing
+        // Do not load assignedClubId into form
     });
     setIsFormOpen(true);
   };
@@ -115,10 +116,10 @@ export default function SSGOICManagementPage() {
     setIsFormOpen(true);
   }
 
-  const handleDelete = (userId: string) => {
+  const handleDelete = async (userId: string) => {
     if (window.confirm("Are you sure you want to delete this OIC? This will remove them from any club/department assignments.")) {
-      deleteUser(userId);
-      // Toast handled by deleteUser
+      await deleteUser(userId); // This now calls deleteUserProfile and deleteUserAuth (context needs to be checked)
+      // Toast handled by deleteUser in context
     }
   };
 
@@ -131,7 +132,7 @@ export default function SSGOICManagementPage() {
               <CardTitle className="text-2xl font-headline flex items-center gap-2">
                 <UserCog className="text-primary h-7 w-7" /> OIC Management (SSG)
               </CardTitle>
-              <CardDescription>Manage all Officer-in-Charge users in the system. Club-specific OIC assignment is done by Club Admins.</CardDescription>
+              <CardDescription>Manage all Officer-in-Charge users. Department assignment is optional. Club assignment is handled by Club Admins.</CardDescription>
             </div>
             <Button onClick={handleCreateNew} className="bg-primary hover:bg-primary/90">
               <PlusCircle className="mr-2 h-5 w-5" /> Add New OIC
@@ -156,14 +157,14 @@ export default function SSGOICManagementPage() {
                   <TableHead>Full Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Assigned Department</TableHead>
-                  <TableHead>Assigned Club</TableHead>
+                  {/* Removed Assigned Club Column */}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredOicUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground h-24"> {/* Adjusted colSpan */}
                       No OIC users found{searchTerm ? ' matching your search' : ''}.
                     </TableCell>
                   </TableRow>
@@ -173,7 +174,7 @@ export default function SSGOICManagementPage() {
                       <TableCell className="font-medium">{user.fullName}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.departmentID ? allDepartments.find(d => d.id === user.departmentID)?.name : 'N/A'}</TableCell>
-                      <TableCell>{user.assignedClubId ? allClubs.find(c => c.id === user.assignedClubId)?.name : 'N/A'}</TableCell>
+                      {/* Removed Cell for Assigned Club */}
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -210,7 +211,7 @@ export default function SSGOICManagementPage() {
           <DialogHeader>
             <DialogTitle>{editingUser ? 'Edit OIC' : 'Add New OIC'}</DialogTitle>
             <DialogDescription>
-              {editingUser ? 'Update OIC details.' : 'Create a new OIC user.'}
+              {editingUser ? 'Update OIC details.' : 'Create a new OIC user. Department assignment is optional.'}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -220,7 +221,7 @@ export default function SSGOICManagementPage() {
             </div>
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} />
+              <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} disabled={!!editingUser} />
             </div>
             <div>
               <Label htmlFor="password">Password</Label>
@@ -244,7 +245,7 @@ export default function SSGOICManagementPage() {
                 </SelectContent>
               </Select>
             </div>
-            {/* Removed Club Assignment Dropdown from SSG Admin form */}
+            {/* Club assignment dropdown is definitively removed from SSG Admin form */}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
@@ -257,4 +258,3 @@ export default function SSGOICManagementPage() {
     </div>
   );
 }
-
