@@ -1,7 +1,8 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord, ClearanceRequest, ApprovalStatus, MessageFirestore, ConversationFirestore } from '@/types/user';
+import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord, ClearanceRequest, ApprovalStatus, MessageFirestore, ConversationFirestore, Notification } from '@/types/user';
+import type { ComposeNotificationOutput } from '@/ai/flows/compose-notification'; // Added for notification type
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -96,9 +97,17 @@ interface AuthContextType {
   selectedConversationId: string | null;
   setSelectedConversationId: (conversationId: string | null) => void;
   listenForUserConversations: (userId: string) => () => void; // Returns unsubscribe function
-  listenForMessages: (conversationId: string | null) => () => void; // Returns unsubscribe function // MODIFIED
+  listenForMessages: (conversationId: string | null) => () => void; // Returns unsubscribe function
   sendMessageToConversation: (conversationId: string, messageText: string) => Promise<void>;
   findOrCreateDirectConversation: (targetUserId: string) => Promise<string | null>; // Returns conversationId
+
+  // Notifications
+  storeComposedNotification: (
+    composedData: ComposeNotificationOutput,
+    originalInput: { recipientGroup: string; notificationType: string; topic: string }
+  ) => Promise<string | null>;
+  // fetchUserNotifications: (userId: string) => Promise<Notification[]>; // For later use
+  // markNotificationAsRead: (notificationId: string, userId: string) => Promise<void>; // For later use
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -222,7 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Removed individual fetch functions from deps to avoid re-triggering on their re-creation
+  }, []);
 
   useEffect(() => {
     if (!loading && !user && !['/login', '/register'].includes(pathname)) {
@@ -266,8 +275,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
-
-      const dataForFirestore: Partial<UserProfile> = {
+      
+      const dataForFirestore: Omit<UserProfile, 'password'> = {
         userID: firebaseUser.uid,
         email,
         fullName,
@@ -323,10 +332,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if ('departmentID' in safeUpdates) finalUpdates.departmentID = safeUpdates.departmentID && safeUpdates.departmentID.trim() !== "" ? safeUpdates.departmentID : undefined;
       if ('assignedClubId' in safeUpdates) finalUpdates.assignedClubId = safeUpdates.assignedClubId && safeUpdates.assignedClubId.trim() !== "" ? safeUpdates.assignedClubId : undefined;
 
-      // Remove undefined fields before sending to Firestore
-      Object.keys(finalUpdates).forEach(key => {
-        if ((finalUpdates as any)[key] === undefined) {
-          delete (finalUpdates as any)[key];
+      Object.keys(finalUpdates).forEach(keyStr => {
+        const key = keyStr as keyof typeof finalUpdates;
+        if (finalUpdates[key] === undefined) {
+          delete finalUpdates[key];
         }
       });
 
@@ -356,19 +365,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let createdAuthUserUid: string | null = null;
-    const currentAuthUser = auth.currentUser; // Store current auth user
+    const currentAuthUser = auth.currentUser; 
     
     try {
-      // Temporarily sign out admin if logged in to prevent auth state issues with createUser
-      // This is a common pattern if admin creates users. The admin will re-login or their session will be restored.
-      // However, Firebase SDK often handles this gracefully if you use a dedicated admin SDK on backend.
-      // For client-side, this can be tricky. Let's assume admin will be re-authenticated by onAuthStateChanged.
-      // A better approach for user creation by admin would be via Firebase Functions to avoid client-side auth juggling.
-
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
       createdAuthUserUid = tempUserCredential.user.uid;
 
-      const dataForFirestore: Partial<UserProfile> = {
+      const dataForFirestore: Partial<Omit<UserProfile, 'password'>> = { // Ensure password field is not part of this type
         userID: createdAuthUserUid,
         email: newUserProfileData.email,
         fullName: newUserProfileData.fullName,
@@ -390,7 +393,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataForFirestore.points = 0;
       }
       
-      // Ensure no undefined fields are sent to Firestore
       Object.keys(dataForFirestore).forEach(keyStr => {
         const key = keyStr as keyof typeof dataForFirestore;
         if (dataForFirestore[key] === undefined) {
@@ -400,21 +402,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
 
-      // If an admin was signed in, re-sign them in. This is complex client-side.
-      // It's simpler to prompt admin to re-login or assume onAuthStateChanged handles it.
-      // For now, we assume the onAuthStateChanged will re-establish the admin's session if they were signed in before.
-      // If currentAuthUser existed and is different from the new user, Firebase might sign out the new user automatically
-      // and restore the admin. If not, admin needs to re-login.
       if (currentAuthUser && currentAuthUser.uid !== createdAuthUserUid) {
-        // This part is tricky on client side. It's better to have admin create users via a Cloud Function.
-        // For now, we'll sign out the newly created user, assuming the admin's session will be restored by onAuthStateChanged.
         await signOut(auth); 
-        // Attempt to re-sign in admin (requires admin credentials, not ideal)
-        // This flow is problematic. Best: admin creates users via backend function.
-        // Second best: Admin will be logged out and need to log back in.
          if (auth.currentUser?.uid !== currentAuthUser.uid) {
             console.warn("Admin session might have been interrupted during user creation. Admin may need to log in again.");
-            // Potentially trigger a re-login for the admin, or rely on onAuthStateChanged
          }
       }
 
@@ -428,10 +419,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
-       // If admin was signed in and an error occurred, attempt to restore admin session
       if (currentAuthUser && auth.currentUser?.uid !== currentAuthUser.uid) {
           console.warn("Admin session might have been interrupted. Admin may need to log in again.");
-          // This part is complex. Simplest is admin relogs.
       }
       return null;
     }
@@ -525,12 +514,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (clubData.description && clubData.description.trim() !== "") {
         dataToSave.description = clubData.description;
       } else {
-        delete dataToSave.description; // Ensure field is omitted if empty
+        delete dataToSave.description; 
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToSave.departmentId = clubData.departmentId;
       } else {
-        delete dataToSave.departmentId; // Ensure field is omitted if empty
+        delete dataToSave.departmentId; 
       }
       
       const docRef = await addDoc(clubColRef, dataToSave);
@@ -559,10 +548,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataToUpdate.departmentId = undefined; 
       }
 
-      // Remove undefined fields before sending to Firestore
-      Object.keys(dataToUpdate).forEach(key => {
-        if ((dataToUpdate as any)[key] === undefined) {
-          delete (dataToUpdate as any)[key];
+      Object.keys(dataToUpdate).forEach(keyStr => {
+        const key = keyStr as keyof typeof dataToUpdate;
+        if (dataToUpdate[key] === undefined) {
+          delete dataToUpdate[key];
         }
       });
 
@@ -604,7 +593,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const eventColRef = collection(db, "events");
       const dataToSave = { ...eventData };
-      Object.keys(dataToSave).forEach(key => (dataToSave as any)[key] === undefined && delete (dataToSave as any)[key]);
+      Object.keys(dataToSave).forEach(keyStr => {
+        const key = keyStr as keyof typeof dataToSave;
+        if ((dataToSave as any)[key] === undefined) delete (dataToSave as any)[key];
+      });
+
 
       const docRef = await addDoc(eventColRef, dataToSave);
       await fetchEvents();
@@ -621,7 +614,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const eventDocRef = doc(db, "events", eventId);
       const dataToUpdate = { ...eventData };
-      Object.keys(dataToUpdate).forEach(key => (dataToUpdate as any)[key] === undefined && delete (dataToUpdate as any)[key]);
+      Object.keys(dataToUpdate).forEach(keyStr => {
+        const key = keyStr as keyof typeof dataToUpdate;
+        if ((dataToUpdate as any)[key] === undefined) delete (dataToUpdate as any)[key];
+      });
 
       await updateDoc(eventDocRef, dataToUpdate);
       await fetchEvents();
@@ -698,7 +694,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         scannedByOICUserID: user.userID, 
         timestamp: serverTimestamp()
       };
-      Object.keys(fullRecordData).forEach(key => (fullRecordData as any)[key] === undefined && delete (fullRecordData as any)[key]);
+      Object.keys(fullRecordData).forEach(keyStr => {
+        const key = keyStr as keyof typeof fullRecordData;
+        if ((fullRecordData as any)[key] === undefined) delete (fullRecordData as any)[key];
+      });
 
       const docRef = await addDoc(attendanceColRef, fullRecordData);
       toast({ title: "Attendance Recorded", description: `Student ${recordData.studentUserID} marked ${recordData.status}.`});
@@ -720,7 +719,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...updates,
         timestamp: serverTimestamp()
       };
-      Object.keys(updatesWithTimestamp).forEach(key => (updatesWithTimestamp as any)[key] === undefined && delete (updatesWithTimestamp as any)[key]);
+      Object.keys(updatesWithTimestamp).forEach(keyStr => {
+        const key = keyStr as keyof typeof updatesWithTimestamp;
+        if ((updatesWithTimestamp as any)[key] === undefined) delete (updatesWithTimestamp as any)[key];
+      });
 
       await updateDoc(attendanceDocRef, updatesWithTimestamp);
       toast({ title: "Attendance Updated", description: `Record ${recordId} updated.`});
@@ -789,7 +791,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     
     const cleanRequestData = { ...newRequestData };
-    Object.keys(cleanRequestData).forEach(key => (cleanRequestData as any)[key] === undefined && delete (cleanRequestData as any)[key]);
+    Object.keys(cleanRequestData).forEach(keyStr => {
+      const key = keyStr as keyof typeof cleanRequestData;
+      if ((cleanRequestData as any)[key] === undefined) delete (cleanRequestData as any)[key];
+    });
 
 
     try {
@@ -859,8 +864,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         [`${stage}ApprovalStatus`]: status,
         [`${stage}ApproverID`]: approverId,
         [`${stage}ApprovalDate`]: serverTimestamp(),
-        [`${stage}ApprovalNotes`]: notes && notes.trim() !== "" ? notes : undefined,
     };
+     if (notes && notes.trim() !== "") {
+        (updates as any)[`${stage}ApprovalNotes`] = notes;
+    } else {
+        (updates as any)[`${stage}ApprovalNotes`] = undefined; // Explicitly remove if empty
+    }
+
 
     const currentRequest = allClearanceRequests.find(r => r.id === requestId) ||
                            (studentClearanceRequest?.id === requestId ? studentClearanceRequest : null);
@@ -872,7 +882,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             overall = 'Rejected';
             if (tempUpdatedRequest.ssgStatus === 'pending' || stage === 'ssg') {
                  updates.ssgStatus = 'rejected';
-                 if (stage !== 'ssg') updates.ssgApprovalNotes = `Auto-rejected due to ${stage} rejection.`;
+                 if (stage !== 'ssg' && (!updates.ssgApprovalNotes || updates.ssgApprovalNotes.trim() === "")) {
+                    updates.ssgApprovalNotes = `Auto-rejected due to ${stage} rejection.`;
+                 }
             }
         } else if (
             (tempUpdatedRequest.clubApprovalStatus === 'approved' || tempUpdatedRequest.clubApprovalStatus === 'not_applicable') &&
@@ -888,7 +900,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     const cleanUpdates = { ...updates };
-    Object.keys(cleanUpdates).forEach(key => (cleanUpdates as any)[key] === undefined && delete (cleanUpdates as any)[key]);
+    Object.keys(cleanUpdates).forEach(keyStr => {
+      const key = keyStr as keyof typeof cleanUpdates;
+      if ((cleanUpdates as any)[key] === undefined) delete (cleanUpdates as any)[key];
+    });
 
 
     try {
@@ -940,10 +955,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [toast]);
 
-  const listenForMessages = useCallback((conversationId: string | null) => { // MODIFIED to accept null
+  const listenForMessages = useCallback((conversationId: string | null) => {
     if (!conversationId) {
-      setCurrentMessagesList([]); // Clear messages if conversationId is null
-      return () => {}; // Return an empty unsubscribe function
+      setCurrentMessagesList([]); 
+      return () => {}; 
     }
     const messagesColRef = collection(db, "conversations", conversationId, "messages");
     const q = query(messagesColRef, orderBy("timestamp", "asc"));
@@ -983,12 +998,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       await addDoc(messagesColRef, { ...newMessage, timestamp: serverTimestamp() });
 
-      // Update conversation's last message details
       await updateDoc(conversationDocRef, {
         lastMessageText: messageText.trim(),
         lastMessageTimestamp: serverTimestamp(),
         lastMessageSenderId: user.userID,
-        // TODO: Increment unread counts for other participants
       });
     } catch (error: any) {
       console.error("Error sending message:", error);
@@ -1035,7 +1048,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         
         const cleanConversationData = { ...newConversationData };
-        Object.keys(cleanConversationData).forEach(key => (cleanConversationData as any)[key] === undefined && delete (cleanConversationData as any)[key]);
+        Object.keys(cleanConversationData).forEach(keyStr => {
+          const key = keyStr as keyof typeof cleanConversationData;
+          if ((cleanConversationData as any)[key] === undefined) delete (cleanConversationData as any)[key];
+        });
 
         const docRef = await addDoc(collection(db, "conversations"), cleanConversationData);
         setSelectedConversationId(docRef.id); 
@@ -1044,6 +1060,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       console.error("Error finding or creating conversation:", error);
       toast({ title: "Conversation Error", description: error.message || "Could not start conversation.", variant: "destructive" });
+      return null;
+    }
+  };
+
+  // --- Notification System Functions ---
+  const storeComposedNotification = async (
+    composedData: ComposeNotificationOutput,
+    originalInput: { recipientGroup: string; notificationType: string; topic: string }
+  ): Promise<string | null> => {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in to send notifications.", variant: "destructive" });
+      return null;
+    }
+
+    const notificationData: Omit<Notification, 'id'> = {
+      ...originalInput,
+      ...composedData,
+      senderId: user.userID,
+      senderName: user.fullName,
+      timestamp: serverTimestamp(),
+      isReadBy: [],
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, "notifications"), notificationData);
+      toast({ title: "Notification Sent", description: "The notification has been stored successfully." });
+      return docRef.id;
+    } catch (error: any) {
+      console.error("Error storing notification:", error);
+      toast({ title: "Notification Error", description: error.message || "Could not store notification.", variant: "destructive" });
       return null;
     }
   };
@@ -1102,6 +1148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         listenForMessages,
         sendMessageToConversation,
         findOrCreateDirectConversation,
+        // Notifications
+        storeComposedNotification,
     }}>
       {children}
     </AuthContext.Provider>
@@ -1115,4 +1163,3 @@ export function useAuth() {
   }
   return context;
 }
-

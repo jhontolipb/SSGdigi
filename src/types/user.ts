@@ -106,3 +106,17 @@ export interface ConversationFirestore {
   unreadCounts?: Record<string, number>; // e.g., { [userId]: count }
   createdAt: any; // Firestore Timestamp
 }
+
+// Notification System Types
+export interface Notification {
+  id: string; // Firestore document ID
+  recipientGroup: string;
+  notificationType: string;
+  topic: string;
+  message: string;
+  urgencyLevel: string;
+  senderId: string; // UserProfile.userID of the admin who sent it
+  senderName: string; // Denormalized name of the sender
+  timestamp: any; // Firestore Timestamp
+  isReadBy?: string[]; // Array of UserIDs who have read this notification
+}

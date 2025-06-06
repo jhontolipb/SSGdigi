@@ -17,12 +17,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Added import
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Bot, AlertTriangle, CheckCircle2, Wand2 } from 'lucide-react';
+import { Loader2, Bot, AlertTriangle, CheckCircle2, Wand2, Send } from 'lucide-react'; // Added Send icon
 import { composeNotification, ComposeNotificationInput, ComposeNotificationOutput } from '@/ai/flows/compose-notification';
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext"; // Added useAuth
 
 const formSchema = z.object({
   recipientGroup: z.string().min(3, { message: "Recipient group must be at least 3 characters." }),
@@ -49,9 +50,12 @@ const notificationTypeSuggestions = [
 ];
 
 export function AIComposeForm() {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [composedNotification, setComposedNotification] = useState<ComposeNotificationOutput | null>(null);
+  const [formInputData, setFormInputData] = useState<z.infer<typeof formSchema> | null>(null);
   const { toast } = useToast();
+  const { storeComposedNotification, user } = useAuth(); // Get storeComposedNotification from AuthContext
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -62,9 +66,10 @@ export function AIComposeForm() {
     },
   });
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
+  async function onComposeSubmit(values: z.infer<typeof formSchema>) {
+    setIsComposing(true);
     setComposedNotification(null);
+    setFormInputData(values); // Store form input for sending later
     try {
       const result = await composeNotification(values as ComposeNotificationInput);
       setComposedNotification(result);
@@ -83,9 +88,47 @@ export function AIComposeForm() {
         action: <AlertTriangle className="text-red-500"/>,
       });
     } finally {
-      setIsLoading(false);
+      setIsComposing(false);
     }
   }
+
+  const handleSendNotification = async () => {
+    if (!composedNotification || !formInputData || !user) {
+      toast({
+        title: "Cannot Send",
+        description: "No notification composed or missing critical data.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const notificationId = await storeComposedNotification(composedNotification, formInputData);
+      if (notificationId) {
+        toast({
+          title: "Notification Stored!",
+          description: "The composed notification has been saved.",
+          action: <CheckCircle2 className="text-green-500" />,
+        });
+        // Optionally reset the form or clear composedNotification
+        setComposedNotification(null);
+        form.reset();
+        setFormInputData(null);
+      } else {
+        // Error toast is handled by storeComposedNotification in context
+      }
+    } catch (error) {
+      // Error toast is likely handled by context, but can add a fallback
+      console.error("Error sending notification from form:", error);
+      toast({
+        title: "Sending Error",
+        description: "An unexpected error occurred while trying to send.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   return (
     <Card className="shadow-lg">
@@ -99,7 +142,7 @@ export function AIComposeForm() {
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onComposeSubmit)} className="space-y-6">
             <FormField
               control={form.control}
               name="recipientGroup"
@@ -166,8 +209,8 @@ export function AIComposeForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading}>
-              {isLoading ? (
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isComposing || isSending}>
+              {isComposing ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Wand2 className="mr-2 h-4 w-4" />
@@ -192,8 +235,11 @@ export function AIComposeForm() {
                 <Input id="urgencyLevel" value={composedNotification.urgencyLevel} readOnly className="mt-1 bg-background capitalize" />
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => navigator.clipboard.writeText(composedNotification.message)}>Copy Message</Button>
-                <Button>Send Notification (Not Implemented)</Button>
+                <Button variant="outline" onClick={() => navigator.clipboard.writeText(composedNotification.message)} disabled={isSending}>Copy Message</Button>
+                <Button onClick={handleSendNotification} disabled={isSending || isComposing} className="bg-accent hover:bg-accent/90">
+                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4"/>}
+                  Send Notification
+                </Button>
               </div>
             </CardContent>
           </Card>
