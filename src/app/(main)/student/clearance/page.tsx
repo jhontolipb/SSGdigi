@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, CheckCircle, XCircle, Clock, Download, PlusCircle, AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 
 type ApprovalStageStatus = 'pending' | 'approved' | 'rejected' | 'not_started';
 
