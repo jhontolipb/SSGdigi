@@ -63,38 +63,37 @@ export default function StudentQRCodePage() {
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(user.qrCodeID)}`;
     const printWindow = window.open('', '_blank');
     if (printWindow) {
-        printWindow.document.write(\`
-            <html>
-                <head>
-                    <title>Print QR Code - \${user.fullName}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding-top: 50px; }
-                        img { border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
-                        h1 { font-size: 24px; }
-                        p { font-size: 16px; }
-                    </style>
-                </head>
-                <body>
-                    <h1>\${user.fullName}</h1>
-                    <p>Student ID: (Your Student ID Here - Not in current data model)</p>
-                    <p>Department: \${departmentName}</p>
-                    <img src="\${qrCodeUrl}" alt="Student QR Code" />
-                    <p>QR Code ID: \${user.qrCodeID}</p>
-                    <script>
-                        window.onload = function() {
-                            window.print();
-                            // window.close(); // Optional: close window after print dialog
-                        }
-                    <\/script>
-                </body>
-            </html>
-        \`);
+        printWindow.document.write(
+            '<html>' +
+            '<head>' +
+            '<title>Print QR Code - ' + user.fullName + '</title>' +
+            '<style>' +
+            'body { font-family: Arial, sans-serif; text-align: center; padding-top: 50px; }' +
+            'img { border: 1px solid #ccc; padding: 10px; border-radius: 8px; }' +
+            'h1 { font-size: 24px; }' +
+            'p { font-size: 16px; }' +
+            '</style>' +
+            '</head>' +
+            '<body>' +
+            '<h1>' + user.fullName + '</h1>' +
+            '<p>Student ID: (Your Student ID Here - Not in current data model)</p>' +
+            '<p>Department: ' + departmentName + '</p>' +
+            '<img src="' + qrCodeUrl + '" alt="Student QR Code" />' +
+            '<p>QR Code ID: ' + user.qrCodeID + '</p>' +
+            '<script>' +
+            'window.onload = function() {' +
+            'window.print();' +
+            // 'window.close();' +  // Optional: close window after print dialog
+            '}' +
+            '<\/script>' + // Escaped closing script tag
+            '</body>' +
+            '</html>'
+        );
         printWindow.document.close();
     } else {
         alert("Could not open print window. Please check your browser's pop-up settings.");
     }
   };
-
 
   return (
     <div className="space-y-6">
@@ -108,7 +107,7 @@ export default function StudentQRCodePage() {
         <CardContent className="text-center space-y-4">
           <div className="flex justify-center p-4 bg-muted/30 rounded-lg">
             <Image
-              src={\`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=\${encodeURIComponent(user.qrCodeID)}\`}
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(user.qrCodeID)}`}
               alt="Student QR Code"
               width={250}
               height={250}
@@ -137,4 +136,3 @@ export default function StudentQRCodePage() {
     </div>
   );
 }
-    
