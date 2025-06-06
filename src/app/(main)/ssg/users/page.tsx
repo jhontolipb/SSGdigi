@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PlusCircle, MoreHorizontal, Search, Filter, Edit, Trash2, UserPlus } from "lucide-react";
+import { PlusCircle, MoreHorizontal, Search, Filter, Edit, Trash2, UserPlus, Users } from "lucide-react";
 import type { UserProfile, UserRole, Department, Club } from '@/types/user';
 import { PredefinedDepartments } from '@/contexts/AuthContext';
 
