@@ -7,10 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"; // Added DialogTrigger
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ClipboardCheck, Users, CalendarDays, Percent, Download, Check, UserPlus, AlertTriangle, CheckCircle2 } from "lucide-react";
-import type { Event, AttendanceRecord as AttendanceRecordType } from '@/types/user'; // Renamed AttendanceRecord to avoid conflict
+import { ClipboardCheck, Users, CalendarDays, Percent, Download, UserPlus, AlertTriangle, CheckCircle2, Check } from "lucide-react"; // Added Check
+import type { Event, AttendanceRecord as AttendanceRecordType } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -27,7 +27,7 @@ interface AttendanceSummary {
 }
 
 export default function AttendanceMonitoringPage() {
-  const { allEvents } = useAuth(); // Use allEvents from context
+  const { allEvents, allUsers } = useAuth(); 
   const [events, setEvents] = useState<Event[]>(allEvents || initialEvents);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecordType[]>([]);
@@ -51,25 +51,46 @@ export default function AttendanceMonitoringPage() {
 
   useEffect(() => {
     if (selectedEventId) {
-      // In a real app, fetch attendance records for the selected event
-      const records = initialAttendance[selectedEventId] || [];
+      const eventForAttendance = allEvents.find(e => e.id === selectedEventId);
+      let records: AttendanceRecordType[] = []; // This would typically be fetched
+
+      // Mock populating attendance records if event exists and students are present
+      // For demo, let's assume some students attended if an event is selected
+      if (eventForAttendance) {
+        const students = allUsers.filter(u => u.role === 'student');
+        // This is a very basic mock, doesn't reflect real attendance logic
+        records = students.slice(0, 5).map((student, index) => ({
+            id: `att_${eventForAttendance.id}_${student.userID}`,
+            eventID: eventForAttendance.id,
+            studentUserID: student.userID,
+            timeIn: '09:00 AM',
+            timeOut: index % 2 === 0 ? '05:00 PM' : null,
+            status: index % 3 === 0 ? 'absent' : (index % 3 === 1 ? 'late' : 'present'),
+            scannedByOICUserID: eventForAttendance.oicIds.length > 0 ? eventForAttendance.oicIds[0] : 'oic_unknown'
+        }));
+      }
+      
       const filteredRecords = records.filter(r => 
-        (r.studentUserID && r.studentUserID.toLowerCase().includes(searchTerm.toLowerCase())) // Assuming studentUserID is what we search for name
+        (r.studentUserID && (allUsers.find(u=>u.userID === r.studentUserID)?.fullName.toLowerCase() || r.studentUserID.toLowerCase()).includes(searchTerm.toLowerCase()))
       );
       setAttendanceRecords(filteredRecords);
 
-      const present = records.filter(r => r.status === 'present' || r.status === 'late').length;
-      const absent = records.filter(r => r.status === 'absent').length;
-      const late = records.filter(r => r.status === 'late').length;
-      const total = records.length; // This should be total expected students for the event, not just records. Needs adjustment for real data.
-      const attendanceRate = total > 0 ? (present / total) * 100 : 0;
-      setSummary({ present, absent, late, total, attendanceRate });
+      const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
+      const absentCount = records.filter(r => r.status === 'absent').length;
+      const lateCount = records.filter(r => r.status === 'late').length;
+      // const totalRecorded = records.length; 
+      // For a more accurate attendance rate, total should be expected attendees, not just recorded.
+      // For this mock, we'll use totalRecorded.
+      const totalExpected = allUsers.filter(u=> u.role === 'student').length; // Example: all students expected
+      const attendanceRateValue = totalExpected > 0 ? (presentCount / totalExpected) * 100 : 0;
+      
+      setSummary({ present: presentCount, absent: absentCount, late: lateCount, total: totalExpected, attendanceRate: attendanceRateValue });
 
     } else {
       setAttendanceRecords([]);
       setSummary(null);
     }
-  }, [selectedEventId, searchTerm]);
+  }, [selectedEventId, searchTerm, allEvents, allUsers]);
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
 
@@ -79,7 +100,6 @@ export default function AttendanceMonitoringPage() {
         title: "Validation Error",
         description: "Full name and email are required for the new OIC.",
         variant: "destructive",
-        action: <AlertTriangle />
       });
       return;
     }
@@ -88,7 +108,6 @@ export default function AttendanceMonitoringPage() {
             title: "Validation Error",
             description: "Please enter a valid email address.",
             variant: "destructive",
-            action: <AlertTriangle />
         });
         return;
     }
@@ -138,7 +157,6 @@ export default function AttendanceMonitoringPage() {
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Add New Officer-in-Charge (OIC)</DialogTitle>
-                  {/* <DialogDescription> Removed as per schema */}
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div>
@@ -185,12 +203,12 @@ export default function AttendanceMonitoringPage() {
               </SelectContent>
             </Select>
             <Input 
-              placeholder="Search by student ID..." 
+              placeholder="Search by student name or ID..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1"
             />
-             <Button variant="outline" disabled><Download className="mr-2 h-4 w-4" /> Export Data</Button> {/* Disabled as not implemented */}
+             <Button variant="outline" disabled><Download className="mr-2 h-4 w-4" /> Export Data</Button>
           </div>
 
           {selectedEvent && summary && (
@@ -199,7 +217,7 @@ export default function AttendanceMonitoringPage() {
                 <CardTitle className="text-xl">Attendance Summary for: {selectedEvent.name}</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                <div><Users className="mx-auto h-6 w-6 text-primary mb-1"/><p className="text-2xl font-bold">{summary.total}</p><p className="text-sm text-muted-foreground">Total Recorded</p></div>
+                <div><Users className="mx-auto h-6 w-6 text-primary mb-1"/><p className="text-2xl font-bold">{summary.total}</p><p className="text-sm text-muted-foreground">Total Expected</p></div>
                 <div><Check className="mx-auto h-6 w-6 text-green-500 mb-1"/><p className="text-2xl font-bold">{summary.present}</p><p className="text-sm text-muted-foreground">Present</p></div>
                 <div><Users className="mx-auto h-6 w-6 text-red-500 mb-1"/><p className="text-2xl font-bold">{summary.absent}</p><p className="text-sm text-muted-foreground">Absent</p></div>
                 <div><Percent className="mx-auto h-6 w-6 text-blue-500 mb-1"/><p className="text-2xl font-bold">{summary.attendanceRate.toFixed(1)}%</p><p className="text-sm text-muted-foreground">Attendance Rate</p></div>
@@ -210,37 +228,22 @@ export default function AttendanceMonitoringPage() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Student ID</TableHead> {/* Changed from Student Name */}
-                  <TableHead>Time In</TableHead>
-                  <TableHead>Time Out</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Scanned By (OIC ID)</TableHead>
-                </TableRow>
+                <TableRow><TableHead>Student Name/ID</TableHead><TableHead>Time In</TableHead><TableHead>Time Out</TableHead><TableHead>Status</TableHead><TableHead>Scanned By (OIC ID)</TableHead></TableRow>
               </TableHeader>
               <TableBody>
-                {attendanceRecords.length > 0 ? attendanceRecords.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell className="font-medium">{record.studentUserID}</TableCell> 
-                    <TableCell>{record.timeIn || 'N/A'}</TableCell>
-                    <TableCell>{record.timeOut || 'N/A'}</TableCell>
-                    <TableCell>
-                      <span className={`px-2 py-1 text-xs rounded-full font-semibold
+                {attendanceRecords.length > 0 ? (
+                  attendanceRecords.map((record) => {
+                    const studentUser = allUsers.find(u => u.userID === record.studentUserID);
+                    return (
+                    <TableRow key={record.id}><TableCell className="font-medium">{studentUser?.fullName || record.studentUserID}</TableCell><TableCell>{record.timeIn || 'N/A'}</TableCell><TableCell>{record.timeOut || 'N/A'}</TableCell><TableCell><span className={`px-2 py-1 text-xs rounded-full font-semibold
                         ${record.status === 'present' ? 'bg-green-100 text-green-700' :
                           record.status === 'absent' ? 'bg-red-100 text-red-700' :
                           record.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'}`}>
-                        {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                      </span>
-                    </TableCell>
-                    <TableCell>{record.scannedByOICUserID || 'N/A'}</TableCell>
-                  </TableRow>
-                )) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
-                      No attendance records for this event{searchTerm ? ' or search term' : ''}.
-                    </TableCell>
-                  </TableRow>
+                          'bg-gray-100 text-gray-700'}`}>{record.status.charAt(0).toUpperCase() + record.status.slice(1)}</span></TableCell><TableCell>{record.scannedByOICUserID || 'N/A'}</TableCell></TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground h-24">No attendance records for this event{searchTerm ? ' matching your search' : ''}.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -252,3 +255,5 @@ export default function AttendanceMonitoringPage() {
     </div>
   );
 }
+
+    
