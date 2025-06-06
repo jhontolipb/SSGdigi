@@ -56,7 +56,7 @@ export default function StudentPointsPage() {
   };
 
   const handlePointsUpdate = () => {
-    if (!selectedStudent || pointsChange === 0) return;
+    if (!selectedStudent || pointsChange === 0 && reason.trim() === '') return; // Allow update if reason is given even for 0 points change
 
     const newPoints = changeType === 'add' 
       ? selectedStudent.points + pointsChange
@@ -149,8 +149,14 @@ export default function StudentPointsPage() {
               <Input 
                 id="pointsChange" 
                 type="number" 
-                value={pointsChange} 
-                onChange={(e) => setPointsChange(Math.max(0, parseInt(e.target.value, 10)))} // Ensure positive
+                value={pointsChange.toString()} // Ensure value is a string
+                onChange={(e) => {
+                  const rawValue = e.target.value;
+                  const num = parseInt(rawValue, 10);
+                  // If rawValue is empty or parsing results in NaN, set pointsChange to 0.
+                  // Otherwise, set to the parsed number, ensuring it's not negative.
+                  setPointsChange(isNaN(num) ? 0 : Math.max(0, num));
+                }}
                 min="0"
               />
             </div>
