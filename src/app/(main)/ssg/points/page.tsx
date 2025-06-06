@@ -6,15 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Award, Search, Edit2, Plus, Minus } from "lucide-react"; // Removed User
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
+import { Award, Search, Edit2, Plus, Minus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAuth } from '@/contexts/AuthContext'; // To get all student users
-import { useToast } from '@/hooks/use-toast'; // For notifications
+import { useAuth } from '@/contexts/AuthContext'; 
+import { useToast } from '@/hooks/use-toast'; 
 
 interface StudentPointRecord {
-  studentId: string; // UserID of the student
+  studentId: string; 
   studentName: string;
   department: string;
   points: number;
@@ -32,6 +32,7 @@ export default function StudentPointsPage() {
   const [pointsChange, setPointsChange] = useState<number>(0);
   const [changeType, setChangeType] = useState<'add' | 'deduct'>('add');
   const [reason, setReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const studentUsers = allUsers
@@ -64,16 +65,18 @@ export default function StudentPointsPage() {
     setIsModalOpen(true);
   };
 
-  const handlePointsUpdate = () => {
+  const handlePointsUpdate = async () => {
     if (!selectedStudent) return;
     if (pointsChange === 0 && reason.trim() === '') {
         toast({title: "No Change", description: "Please enter points to change or a reason.", variant:"default"});
         return;
     }
 
+    setIsSubmitting(true);
     const studentToUpdate = allUsers.find(u => u.userID === selectedStudent.studentId);
     if (!studentToUpdate) {
         toast({title: "Error", description: "Student not found.", variant:"destructive"});
+        setIsSubmitting(false);
         return;
     }
 
@@ -84,10 +87,14 @@ export default function StudentPointsPage() {
     
     const finalPoints = Math.max(0, newPointsValue); 
 
-    updateUser({ ...studentToUpdate, points: finalPoints });
+    await updateUser({ points: finalPoints }, selectedStudent.studentId);
+    // Toast for success is handled by updateUser in AuthContext
     
-    toast({title: "Points Updated", description: `Points for ${selectedStudent.studentName} set to ${finalPoints}. Reason: ${reason || 'N/A'}`});
+    // This toast is specific to this action, can be kept or rely on context's generic one
+    toast({title: "Points Update Initiated", description: `Points for ${selectedStudent.studentName} will be set to ${finalPoints}. Reason: ${reason || 'N/A'}`});
+    
     setIsModalOpen(false);
+    setIsSubmitting(false);
   };
 
   return (
@@ -97,7 +104,7 @@ export default function StudentPointsPage() {
           <CardTitle className="text-2xl font-headline flex items-center gap-2">
             <Award className="text-primary h-7 w-7" /> Student Points Management
           </CardTitle>
-          <CardDescription>Assign or deduct points for student activities and participation.</CardDescription>
+          <CardDescription>Assign or deduct points for student activities and participation. Data from Firestore.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4 mb-6 p-4 border rounded-lg bg-muted/20">
@@ -132,7 +139,7 @@ export default function StudentPointsPage() {
                     <TableCell>{student.department}</TableCell>
                     <TableCell className="font-semibold">{student.points}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => openModal(student)}>
+                      <Button variant="outline" size="sm" onClick={() => openModal(student)} disabled={isSubmitting}>
                         <Edit2 className="mr-2 h-4 w-4" /> Adjust Points
                       </Button>
                     </TableCell>
@@ -144,17 +151,16 @@ export default function StudentPointsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      <Dialog open={isModalOpen} onOpenChange={(open) => { if (!isSubmitting) setIsModalOpen(open); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Adjust Points for {selectedStudent?.studentName}</DialogTitle>
-            {/* <DialogDescription>Current Points: {selectedStudent?.points}</DialogDescription> */}
           </DialogHeader>
           <div className="py-4 space-y-4">
             <p>Current Points: <strong>{selectedStudent?.points}</strong></p>
             <div>
               <Label htmlFor="changeType">Action Type</Label>
-              <Select value={changeType} onValueChange={(value) => setChangeType(value as 'add' | 'deduct')}>
+              <Select value={changeType} onValueChange={(value) => setChangeType(value as 'add' | 'deduct')} disabled={isSubmitting}>
                 <SelectTrigger id="changeType">
                   <SelectValue placeholder="Select action" />
                 </SelectTrigger>
@@ -175,22 +181,26 @@ export default function StudentPointsPage() {
                   setPointsChange(isNaN(num) ? 0 : Math.max(0, num));
                 }}
                 min="0"
+                disabled={isSubmitting}
               />
             </div>
              <div>
-              <Label htmlFor="reason">Reason for Change</Label>
+              <Label htmlFor="reason">Reason for Change (Optional)</Label>
               <Input 
                 id="reason" 
                 type="text" 
                 value={reason} 
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="e.g., Event participation, Sanction"
+                disabled={isSubmitting}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button onClick={handlePointsUpdate} className="bg-primary hover:bg-primary/90">Confirm Update</Button>
+            <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button onClick={handlePointsUpdate} className="bg-primary hover:bg-primary/90" disabled={isSubmitting}>
+                {isSubmitting ? "Updating..." : "Confirm Update"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
