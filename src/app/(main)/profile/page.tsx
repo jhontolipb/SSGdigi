@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react"; // Added useEffect
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
-import { PredefinedDepartments } from "@/contexts/AuthContext";
+// import { PredefinedDepartments } from "@/contexts/AuthContext"; // Removed
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,7 +21,7 @@ import { Loader2, KeyRound } from "lucide-react";
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required."),
-  newPassword: z.string().min(8, "New password must be at least 8 characters."), // Firebase minimum is 6, but 8 is better practice
+  newPassword: z.string().min(8, "New password must be at least 8 characters."),
   confirmNewPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmNewPassword, {
   message: "New passwords don't match.",
@@ -29,10 +29,11 @@ const changePasswordSchema = z.object({
 });
 
 export default function ProfilePage() {
-  const { user, changePassword: authChangePassword, loading: authLoading } = useAuth(); // Renamed to authChangePassword
+  const { user, changePassword: authChangePassword, loading: authLoading, allDepartments, fetchDepartments } = useAuth();
   const { toast } = useToast();
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [isPasswordChanging, setIsPasswordChanging] = useState(false);
+  const [departmentName, setDepartmentName] = useState('N/A');
 
   const passwordForm = useForm<z.infer<typeof changePasswordSchema>>({
     resolver: zodResolver(changePasswordSchema),
@@ -42,6 +43,22 @@ export default function ProfilePage() {
       confirmNewPassword: "",
     },
   });
+
+  useEffect(() => {
+    if (allDepartments.length === 0) {
+      fetchDepartments(); // Fetch if not already loaded by context
+    }
+  }, [allDepartments, fetchDepartments]);
+
+  useEffect(() => {
+    if (user && user.departmentID && allDepartments.length > 0) {
+      const dept = allDepartments.find(d => d.id === user.departmentID);
+      setDepartmentName(dept ? dept.name : 'N/A (Unknown Dept ID)');
+    } else if (user && !user.departmentID) {
+      setDepartmentName('N/A');
+    }
+  }, [user, allDepartments]);
+
 
   if (authLoading || !user) {
     return (
@@ -60,8 +77,6 @@ export default function ProfilePage() {
     }
     return initials;
   };
-  
-  const departmentName = PredefinedDepartments.find(d => d.id === user.departmentID)?.name || 'N/A';
 
   const onPasswordSubmit = async (values: z.infer<typeof changePasswordSchema>) => {
     if (!user) return;
@@ -71,8 +86,6 @@ export default function ProfilePage() {
       toast({ title: "Success", description: result.message });
       setIsPasswordDialogOpen(false);
       passwordForm.reset();
-    } else {
-      // Toast is handled by AuthContext's changePassword on failure
     }
     setIsPasswordChanging(false);
   };
@@ -93,8 +106,8 @@ export default function ProfilePage() {
             <Label htmlFor="email">Email</Label>
             <Input id="email" value={user.email} readOnly disabled />
           </div>
-          
-          {user.role === 'student' && user.departmentID && (
+
+          {user.role === 'student' && ( // departmentID might not be set if user is not a student or data is incomplete
             <div>
               <Label htmlFor="department">Department</Label>
               <Input id="department" value={departmentName} readOnly disabled />
@@ -192,13 +205,13 @@ export default function ProfilePage() {
               <div className="text-center space-y-2">
                 <h3 className="text-lg font-semibold">My QR Code ID</h3>
                 <div className="flex justify-center">
-                  <Image 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(user.qrCodeID)}`} 
-                    alt="Student QR Code" 
-                    width={200} 
+                  <Image
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(user.qrCodeID)}`}
+                    alt="Student QR Code"
+                    width={200}
                     height={200}
                     data-ai-hint="QR code"
-                    className="rounded-md shadow-md" 
+                    className="rounded-md shadow-md"
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">QR Code ID: {user.qrCodeID}</p>
@@ -208,10 +221,12 @@ export default function ProfilePage() {
               </div>
             </>
           )}
-          
+
           <Button className="w-full mt-4" disabled>Update Profile Details (Not implemented)</Button>
         </CardContent>
       </Card>
     </div>
   );
 }
+
+    

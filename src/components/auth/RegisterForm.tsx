@@ -19,14 +19,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth, PredefinedDepartments } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext"; // Removed PredefinedDepartments import
 import { Loader2 } from "lucide-react";
-// useToast is now handled by AuthContext for registration errors
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }), // Firebase has its own password strength rules
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
   confirmPassword: z.string(),
   departmentId: z.string().min(1, { message: "Please select your department." }),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -36,9 +35,9 @@ const formSchema = z.object({
 
 
 export function RegisterForm() {
-  const { registerStudent } = useAuth();
+  const { registerStudent, allDepartments, loading: authLoading } = useAuth(); // Added allDepartments and authLoading
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -53,7 +52,6 @@ export function RegisterForm() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     await registerStudent(values.fullName, values.email, values.departmentId, values.password);
-    // registerStudent handles navigation or toast for errors.
     setIsLoading(false);
   }
 
@@ -98,18 +96,19 @@ export function RegisterForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Department</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={authLoading || allDepartments.length === 0}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select your department" />
+                        <SelectValue placeholder={authLoading ? "Loading departments..." : "Select your department"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {PredefinedDepartments.map((dept) => (
+                      {allDepartments.map((dept) => (
                         <SelectItem key={dept.id} value={dept.id}>
                           {dept.name}
                         </SelectItem>
                       ))}
+                      {!authLoading && allDepartments.length === 0 && <SelectItem value="none" disabled>No departments available</SelectItem>}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -142,8 +141,8 @@ export function RegisterForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90" disabled={isLoading || authLoading}>
+              {(isLoading || authLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Register
             </Button>
           </form>
@@ -158,3 +157,5 @@ export function RegisterForm() {
     </Card>
   );
 }
+
+    

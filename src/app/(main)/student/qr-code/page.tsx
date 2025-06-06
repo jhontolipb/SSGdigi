@@ -3,49 +3,72 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { QrCode, Download, Printer } from "lucide-react";
+import { QrCode, Download, Printer, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
-import { PredefinedDepartments } from "@/contexts/AuthContext";
+import { useState, useEffect } from "react"; // Added useState, useEffect
+// import { PredefinedDepartments } from "@/contexts/AuthContext"; // Removed
 
 
 export default function StudentQRCodePage() {
-  const { user } = useAuth();
+  const { user, allDepartments, fetchDepartments, loading: authLoading } = useAuth();
+  const [departmentName, setDepartmentName] = useState('N/A');
 
-  if (!user || user.role !== 'student' || !user.qrCodeId) {
+  useEffect(() => {
+    if (allDepartments.length === 0 && !authLoading) {
+      fetchDepartments();
+    }
+  }, [allDepartments, authLoading, fetchDepartments]);
+
+  useEffect(() => {
+    if (user && user.departmentID && allDepartments.length > 0) {
+      const dept = allDepartments.find(d => d.id === user.departmentID);
+      setDepartmentName(dept ? dept.name : 'N/A (Unknown Dept ID)');
+    } else if (user && !user.departmentID) {
+      setDepartmentName('N/A');
+    }
+  }, [user, allDepartments]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user || user.role !== 'student' || !user.qrCodeID) { // Changed from qrCodeId to qrCodeID
     return (
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>QR Code Not Available</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Your QR code is not available at the moment. Please contact support if this persists.</p>
+          <p className="text-muted-foreground">Your QR code is not available at the moment. This could be because you are not registered as a student or your QR ID has not been generated. Please contact support if this persists.</p>
         </CardContent>
       </Card>
     );
   }
-  
-  const departmentName = PredefinedDepartments.find(d => d.id === user.departmentId)?.name || 'N/A';
 
   const handleDownload = () => {
-    // This is a simplified download. A better approach would be to generate image on server or use a library to draw on canvas and then download.
     const link = document.createElement('a');
-    link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(user.qrCodeId!)}&format=png`;
+    link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(user.qrCodeID!)}&format=png`;
     link.download = `${user.fullName}_QRCode.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    alert("QR Code download initiated (using qrserver.com API).");
+    // toast({ title: "Download Started", description: "QR Code download initiated." }); // Optional: use toast
   };
 
   const handlePrint = () => {
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(user.qrCodeId!)}`;
+    if (!user?.qrCodeID) return; // Guard clause
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(user.qrCodeID)}`;
     const printWindow = window.open('', '_blank');
     if (printWindow) {
-        printWindow.document.write(`
+        printWindow.document.write(\`
             <html>
                 <head>
-                    <title>Print QR Code - ${user.fullName}</title>
+                    <title>Print QR Code - \${user.fullName}</title>
                     <style>
                         body { font-family: Arial, sans-serif; text-align: center; padding-top: 50px; }
                         img { border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
@@ -54,11 +77,11 @@ export default function StudentQRCodePage() {
                     </style>
                 </head>
                 <body>
-                    <h1>${user.fullName}</h1>
-                    <p>Student ID: (Your Student ID Here - Not in mock data)</p>
-                    <p>Department: ${departmentName}</p>
-                    <img src="${qrCodeUrl}" alt="Student QR Code" />
-                    <p>QR Code ID: ${user.qrCodeId}</p>
+                    <h1>\${user.fullName}</h1>
+                    <p>Student ID: (Your Student ID Here - Not in current data model)</p>
+                    <p>Department: \${departmentName}</p>
+                    <img src="\${qrCodeUrl}" alt="Student QR Code" />
+                    <p>QR Code ID: \${user.qrCodeID}</p>
                     <script>
                         window.onload = function() {
                             window.print();
@@ -67,7 +90,7 @@ export default function StudentQRCodePage() {
                     </script>
                 </body>
             </html>
-        `);
+        \`);
         printWindow.document.close();
     } else {
         alert("Could not open print window. Please check your browser's pop-up settings.");
@@ -86,10 +109,10 @@ export default function StudentQRCodePage() {
         </CardHeader>
         <CardContent className="text-center space-y-4">
           <div className="flex justify-center p-4 bg-muted/30 rounded-lg">
-            <Image 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(user.qrCodeId)}`} 
-              alt="Student QR Code" 
-              width={250} 
+            <Image
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(user.qrCodeID)}`}
+              alt="Student QR Code"
+              width={250}
               height={250}
               data-ai-hint="QR code attendance"
               className="rounded-md shadow-md border"
@@ -98,7 +121,7 @@ export default function StudentQRCodePage() {
           <div>
             <p className="font-semibold text-lg">{user.fullName}</p>
             <p className="text-sm text-muted-foreground">Department: {departmentName}</p>
-            <p className="text-xs text-muted-foreground mt-1">QR ID: {user.qrCodeId}</p>
+            <p className="text-xs text-muted-foreground mt-1">QR ID: {user.qrCodeID}</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
             <Button onClick={handleDownload} variant="outline">
@@ -117,3 +140,4 @@ export default function StudentQRCodePage() {
   );
 }
 
+    
