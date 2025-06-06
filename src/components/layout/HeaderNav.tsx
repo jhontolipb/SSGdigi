@@ -15,11 +15,11 @@ import {
 import { LogOut, UserCircle, Settings, LayoutDashboard, SidebarOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotificationBell } from '@/components/NotificationBell';
-import { useSidebar } from '@/components/ui/sidebar'; // Assuming sidebar context exists
+import { useSidebar } from '@/components/ui/sidebar'; 
 
 export function HeaderNav() {
   const { user, logout } = useAuth();
-  const { toggleSidebar, isMobile } = useSidebar(); // Access sidebar context
+  const { toggleSidebar, isMobile } = useSidebar(); 
 
   const getInitials = (name: string = "") => {
     const names = name.split(' ');
@@ -91,9 +91,11 @@ export function HeaderNav() {
                   <span>Profile</span>
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
+              <DropdownMenuItem asChild>
+                <Link href="/settings">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={logout}>
