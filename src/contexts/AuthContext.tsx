@@ -19,7 +19,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, role: UserRole) => void;
+  login: (email: string) => void; // Changed signature: role removed
   logout: () => void;
   registerStudent: (fullName: string, email: string, departmentId: string) => void;
 }
@@ -35,6 +35,15 @@ const defaultDepartments = [
   { id: 'dept_bs_educ', name: 'Bachelor of Secondary Education' },
   { id: 'dept_bs_ais', name: 'BS Accounting Information System' },
 ];
+
+// Mock user data for specific roles
+const mockRoleAssignments: Record<string, { role: UserRole, fullName?: string, departmentId?: string, clubId?: string}> = {
+    'ssg.superadmin@yourcampus.edu': { role: 'ssg_admin', fullName: 'Super Admin' },
+    'clubadmin1@example.com': { role: 'club_admin', fullName: 'Alice ClubAdmin', clubId: 'club1' }, // Assuming club1 exists
+    'deptadmin1@example.com': { role: 'department_admin', fullName: 'Bob DeptAdmin', departmentId: defaultDepartments[0].id },
+    'oic1@example.com': { role: 'oic', fullName: 'Charlie OIC', departmentId: defaultDepartments[1].id },
+};
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -67,15 +76,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, loading, pathname, router]);
 
 
-  const login = (email: string, role: UserRole) => {
-    // Simulate login
+  const login = (email: string) => { // Role parameter removed
+    let determinedRole: UserRole = 'student'; // Default role
+    let userFullName = 'Test Student';
+    let userDepartmentId: string | undefined = defaultDepartments[1].id; // Default department for students
+    let userClubId: string | undefined = undefined;
+
+    const specificRoleAssignment = mockRoleAssignments[email.toLowerCase()];
+    if (specificRoleAssignment) {
+        determinedRole = specificRoleAssignment.role;
+        userFullName = specificRoleAssignment.fullName || `Test ${determinedRole.replace('_', ' ')}`;
+        userDepartmentId = specificRoleAssignment.departmentId;
+        userClubId = specificRoleAssignment.clubId;
+    } else {
+        // For generic student logins, if not in mockRoleAssignments
+        userFullName = email.split('@')[0]; // simple name from email
+    }
+    
     const mockUser: User = {
       id: 'user-' + Math.random().toString(36).substr(2, 9),
       email,
-      fullName: email === 'ssg.superadmin@yourcampus.edu' ? 'Super Admin' : 'Test User',
-      role,
-      qrCodeId: role === 'student' ? 'qr-' + Math.random().toString(36).substr(2, 9) : undefined,
-      departmentId: role === 'student' ? defaultDepartments[0].id : undefined, // Assign a default department for testing
+      fullName: userFullName,
+      role: determinedRole,
+      qrCodeId: determinedRole === 'student' ? 'qr-' + Math.random().toString(36).substr(2, 9) : undefined,
+      departmentId: userDepartmentId,
+      clubId: userClubId,
+      points: determinedRole === 'student' ? Math.floor(Math.random() * 200) : undefined,
     };
     localStorage.setItem('campusConnectUser', JSON.stringify(mockUser));
     setUser(mockUser);
@@ -118,4 +144,3 @@ export function useAuth() {
 }
 
 export const PredefinedDepartments = defaultDepartments;
-

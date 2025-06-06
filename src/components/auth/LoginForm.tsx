@@ -18,17 +18,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import type { UserRole } from "@/types/user";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
-  role: z.custom<UserRole>((val) => ['ssg_admin', 'club_admin', 'department_admin', 'oic', 'student'].includes(val as string), {
-    message: "Invalid role selected.",
-  }),
 });
 
 export function LoginForm() {
@@ -40,7 +35,6 @@ export function LoginForm() {
     defaultValues: {
       email: "",
       password: "",
-      role: "student", 
     },
   });
 
@@ -48,7 +42,7 @@ export function LoginForm() {
     setIsLoading(true);
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000));
-    login(values.email, values.role);
+    login(values.email); // Role is no longer passed from here
     // No need to setIsLoading(false) as page will redirect
   }
 
@@ -83,30 +77,6 @@ export function LoginForm() {
                   <FormControl>
                     <Input type="password" placeholder="••••••••" {...field} />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your role" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="oic">Officer-in-Charge (OIC)</SelectItem>
-                      <SelectItem value="club_admin">Club Admin</SelectItem>
-                      <SelectItem value="department_admin">Department Admin</SelectItem>
-                      <SelectItem value="ssg_admin">SSG Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
