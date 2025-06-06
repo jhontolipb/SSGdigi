@@ -157,9 +157,9 @@ export default function StudentClearancePage() {
                   </Button>
                 </div>
               ) : (
-                 <p className="text-center text-muted-foreground mt-6">
-                    Overall Status: <Badge variant={getOverallStatusBadgeVariant(studentClearanceRequest.overallStatus)} className={`text-sm ${studentClearanceRequest.overallStatus === 'Approved' ? 'bg-green-500 hover:bg-green-600' : ''}`}>{studentClearanceRequest.overallStatus}</Badge>
-                 </p>
+                 <div className="text-center text-muted-foreground mt-6">
+                    <span>Overall Status: </span><Badge variant={getOverallStatusBadgeVariant(studentClearanceRequest.overallStatus)} className={`text-sm ${studentClearanceRequest.overallStatus === 'Approved' ? 'bg-green-500 hover:bg-green-600' : ''}`}>{studentClearanceRequest.overallStatus}</Badge>
+                 </div>
               )}
             </div>
           )}
@@ -168,3 +168,4 @@ export default function StudentClearancePage() {
     </div>
   );
 }
+
