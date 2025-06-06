@@ -31,6 +31,8 @@ const mockClubAdmins: UserProfile[] = [ // Filtered for club_admin role
     { userID: 'user6', email: 'clubadmin2@example.com', fullName: 'Edward Scissorhands', role: 'club_admin', clubID: 'club2' },
 ];
 
+const SELECT_NONE_VALUE = "@_NONE_@"; // Special value for "None" selection
+
 export default function ClubManagementPage() {
   const [clubs, setClubs] = useState<Club[]>(mockInitialClubs);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -38,14 +40,14 @@ export default function ClubManagementPage() {
   
   // Form state
   const [clubName, setClubName] = useState('');
-  const [departmentId, setDepartmentId] = useState<string | undefined>('');
-  const [assignedAdmin, setAssignedAdmin] = useState<string | undefined>(''); // UserID of assigned club_admin
+  const [departmentId, setDepartmentId] = useState<string | undefined>(undefined);
+  const [assignedAdmin, setAssignedAdmin] = useState<string | undefined>(undefined); // UserID of assigned club_admin
 
   const handleCreateNew = () => {
     setEditingClub(null);
     setClubName('');
-    setDepartmentId('');
-    setAssignedAdmin('');
+    setDepartmentId(undefined);
+    setAssignedAdmin(undefined);
     setIsFormOpen(true);
   };
 
@@ -74,8 +76,15 @@ export default function ClubManagementPage() {
     if (editingClub) {
       setClubs(prev => prev.map(c => c.id === editingClub.id ? { ...c, name: clubName, departmentId: departmentId || undefined } : c));
       // Handle admin assignment update here (mock)
+      // This mock logic needs refinement to correctly unassign previous admin if a new one is chosen or "None" is selected.
+      mockClubAdmins.forEach(admin => {
+        if (admin.clubID === editingClub.id && admin.userID !== assignedAdmin) {
+          admin.clubID = undefined; // Unassign old admin if different or if new is None
+        }
+      });
       const adminToUpdate = mockClubAdmins.find(a => a.userID === assignedAdmin);
       if (adminToUpdate) adminToUpdate.clubID = editingClub.id;
+
 
     } else {
       const newClub: Club = {
@@ -167,12 +176,15 @@ export default function ClubManagementPage() {
             </div>
             <div>
               <Label htmlFor="departmentId">Associated Department (Optional)</Label>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
+              <Select 
+                value={departmentId || ''} 
+                onValueChange={(val) => setDepartmentId(val === SELECT_NONE_VALUE ? undefined : val)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={SELECT_NONE_VALUE}>None</SelectItem>
                   {PredefinedDepartments.map(dept => (
                     <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                   ))}
@@ -181,12 +193,15 @@ export default function ClubManagementPage() {
             </div>
             <div>
               <Label htmlFor="assignedAdmin">Assign Club Admin</Label>
-              <Select value={assignedAdmin} onValueChange={setAssignedAdmin}>
+              <Select 
+                value={assignedAdmin || ''} 
+                onValueChange={(val) => setAssignedAdmin(val === SELECT_NONE_VALUE ? undefined : val)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Club Admin" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={SELECT_NONE_VALUE}>None</SelectItem>
                   {/* Filter for users with club_admin role who are not already assigned OR current admin */}
                   {mockClubAdmins.filter(admin => admin.role === 'club_admin' && (!admin.clubID || admin.clubID === editingClub?.id)).map(admin => (
                     <SelectItem key={admin.userID} value={admin.userID}>{admin.fullName} ({admin.email})</SelectItem>
