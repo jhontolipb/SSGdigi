@@ -6,31 +6,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PlusCircle, MoreHorizontal, Search, Filter, Edit, Trash2, UserPlus, Users } from "lucide-react";
+import { PlusCircle, MoreHorizontal, Search, Filter, Edit, Trash2, UserPlus, Users as UsersIcon } from "lucide-react"; // Renamed Users to UsersIcon to avoid conflict
 import type { UserProfile, UserRole, Department, Club } from '@/types/user';
-import { PredefinedDepartments } from '@/contexts/AuthContext';
+import { useAuth, PredefinedDepartments, PredefinedClubs } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
-// Mock data
-const mockUsers: UserProfile[] = [
-  { userID: 'user1', email: 'clubadmin1@example.com', fullName: 'Alice Wonderland', role: 'club_admin', clubID: 'club1' },
-  { userID: 'user2', email: 'deptadmin1@example.com', fullName: 'Bob The Builder', role: 'department_admin', departmentID: PredefinedDepartments[0].id },
-  { userID: 'user3', email: 'oic1@example.com', fullName: 'Charlie Chaplin', role: 'oic', departmentID: PredefinedDepartments[1].id },
-  { userID: 'user4', email: 'student1@example.com', fullName: 'Diana Prince', role: 'student', departmentID: PredefinedDepartments[0].id, qrCodeID: 'qr123', points: 100 },
-  { userID: 'user5', email: 'ssg.superadmin@yourcampus.edu', fullName: 'Super Admin', role: 'ssg_admin' },
-];
-
-const mockClubs: Club[] = [
-    { id: 'club1', name: 'Robotics Club', departmentId: PredefinedDepartments[1].id },
-    { id: 'club2', name: 'Tourism Society', departmentId: PredefinedDepartments[0].id },
-];
+const defaultNewUserPassword = "password123";
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState<UserProfile[]>(mockUsers);
-  const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>(mockUsers);
+  const { allUsers, updateUser, addUser, deleteUser, allClubs, allDepartments } = useAuth();
+  const { toast } = useToast();
+
+  const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>(allUsers);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string | 'all'>('all');
@@ -39,13 +30,12 @@ export default function UserManagementPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
 
-  // Form state (simplified, use react-hook-form for real app)
   const [formData, setFormData] = useState<Partial<UserProfile>>({
-    fullName: '', email: '', role: 'oic', departmentID: '', clubID: ''
+    fullName: '', email: '', role: 'oic', password: '', departmentID: '', clubID: ''
   });
 
   useEffect(() => {
-    let result = users;
+    let result = allUsers;
     if (searchTerm) {
       result = result.filter(user => 
         user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -62,7 +52,7 @@ export default function UserManagementPage() {
       result = result.filter(user => user.clubID === clubFilter);
     }
     setFilteredUsers(result);
-  }, [users, searchTerm, roleFilter, departmentFilter, clubFilter]);
+  }, [allUsers, searchTerm, roleFilter, departmentFilter, clubFilter]);
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement> | {name: string, value: string} ) => {
     const name = 'name' in e ? e.name : e.target.name;
@@ -75,37 +65,55 @@ export default function UserManagementPage() {
   }
 
   const handleSubmitForm = () => {
+    if (!formData.fullName || !formData.email || !formData.role) {
+      toast({ title: "Error", description: "Full name, email, and role are required.", variant: "destructive" });
+      return;
+    }
     if (editingUser) {
-      // Update user
-      setUsers(prevUsers => prevUsers.map(u => u.userID === editingUser.userID ? { ...u, ...formData } as UserProfile : u));
+      const userToUpdate: UserProfile = { 
+        ...editingUser, 
+        ...formData, 
+        // If password field is empty during edit, keep existing password, otherwise update it.
+        password: formData.password ? formData.password : editingUser.password 
+      };
+      updateUser(userToUpdate);
+      toast({ title: "Success", description: "User updated successfully." });
     } else {
-      // Create new user
+      if (!formData.password) {
+        toast({ title: "Error", description: "Password is required for new users.", variant: "destructive" });
+        return;
+      }
       const newUser: UserProfile = {
         userID: `user${Date.now()}`,
         ...formData,
-      } as UserProfile; // Add proper validation and password handling
-      setUsers(prevUsers => [...prevUsers, newUser]);
+        points: formData.role === 'student' ? 0 : undefined,
+        qrCodeID: formData.role === 'student' ? `qr${Date.now()}`: undefined,
+      } as UserProfile;
+      addUser(newUser);
+      toast({ title: "Success", description: "User created successfully." });
     }
     setIsFormOpen(false);
     setEditingUser(null);
-    setFormData({ fullName: '', email: '', role: 'oic', departmentID: '', clubID: '' });
+    setFormData({ fullName: '', email: '', role: 'oic', password: '', departmentID: '', clubID: '' });
   };
 
   const handleEdit = (user: UserProfile) => {
     setEditingUser(user);
-    setFormData({ fullName: user.fullName, email: user.email, role: user.role, departmentID: user.departmentID, clubID: user.clubID });
+    // When editing, don't pre-fill password for security, let admin type if they want to change it.
+    setFormData({ fullName: user.fullName, email: user.email, role: user.role, departmentID: user.departmentID, clubID: user.clubID, password: '' });
     setIsFormOpen(true);
   };
   
   const handleCreateNew = () => {
     setEditingUser(null);
-    setFormData({ fullName: '', email: '', role: 'oic', departmentID: '', clubID: '' });
+    setFormData({ fullName: '', email: '', role: 'oic', password: defaultNewUserPassword, departmentID: '', clubID: '' });
     setIsFormOpen(true);
   }
 
   const handleDelete = (userId: string) => {
     if (window.confirm("Are you sure you want to delete this user?")) {
-      setUsers(prevUsers => prevUsers.filter(u => u.userID !== userId));
+      deleteUser(userId);
+      toast({ title: "Success", description: "User deleted successfully." });
     }
   };
 
@@ -117,7 +125,7 @@ export default function UserManagementPage() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
               <CardTitle className="text-2xl font-headline flex items-center gap-2">
-                <Users className="text-primary h-7 w-7" /> User Management
+                <UsersIcon className="text-primary h-7 w-7" /> User Management
               </CardTitle>
               <CardDescription>Manage all users in the CampusConnect system.</CardDescription>
             </div>
@@ -127,7 +135,6 @@ export default function UserManagementPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg bg-muted/20">
             <Input 
               placeholder="Search by name or email..." 
@@ -150,19 +157,18 @@ export default function UserManagementPage() {
               <SelectTrigger><SelectValue placeholder="Filter by Department" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
-                {PredefinedDepartments.map(dept => <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>)}
+                {allDepartments.map(dept => <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={clubFilter} onValueChange={(value) => setClubFilter(value)}>
               <SelectTrigger><SelectValue placeholder="Filter by Club" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Clubs</SelectItem>
-                 {mockClubs.map(club => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}
+                 {allClubs.map(club => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
 
-          {/* User Table */}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -181,8 +187,8 @@ export default function UserManagementPage() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell className="capitalize">{user.role.replace('_', ' ')}</TableCell>
                     <TableCell>
-                      {user.departmentID ? PredefinedDepartments.find(d => d.id === user.departmentID)?.name || 'N/A' : ''}
-                      {user.clubID ? mockClubs.find(c => c.id === user.clubID)?.name || 'N/A' : ''}
+                      {user.departmentID ? allDepartments.find(d => d.id === user.departmentID)?.name || 'N/A' : ''}
+                      {user.clubID ? allClubs.find(c => c.id === user.clubID)?.name || 'N/A' : ''}
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -194,15 +200,14 @@ export default function UserManagementPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleEdit(user)} disabled={user.role === 'student' || user.role === 'ssg_admin' /* SSG admin cannot edit students directly here, or self */}>
+                          <DropdownMenuItem onClick={() => handleEdit(user)} disabled={user.role === 'student' /* Students managed via registration or other specialized forms */}>
                             <Edit className="mr-2 h-4 w-4" /> Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => alert(`View details for ${user.fullName}`)}>View Details</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem 
                             onClick={() => handleDelete(user.userID)} 
                             className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                            disabled={user.role === 'ssg_admin' /* Cannot delete self/superadmin */}
+                            disabled={user.role === 'ssg_admin' && user.email === 'ssg.superadmin@yourcampus.edu' /* Cannot delete main superadmin */}
                           >
                             <Trash2 className="mr-2 h-4 w-4" /> Delete
                           </DropdownMenuItem>
@@ -218,7 +223,6 @@ export default function UserManagementPage() {
         </CardContent>
       </Card>
 
-      {/* User Form Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -237,12 +241,20 @@ export default function UserManagementPage() {
               <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} className="col-span-3" />
             </div>
              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="password_placeholder" className="text-right">Password</Label>
-                <Input id="password_placeholder" name="password_placeholder" type="password" placeholder={editingUser ? "Unchanged" : "Set password"} className="col-span-3" disabled={!!editingUser /* Simplified password handling for demo */} />
+                <Label htmlFor="password" className="text-right">Password</Label>
+                <Input 
+                  id="password" 
+                  name="password" 
+                  type="password" 
+                  placeholder={editingUser ? "Leave blank to keep unchanged" : "Enter password"}
+                  value={formData.password || ''} 
+                  onChange={handleFormChange} 
+                  className="col-span-3" 
+                />
              </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="role" className="text-right">Role</Label>
-              <Select name="role" value={formData.role || 'oic'} onValueChange={(value) => handleSelectChange('role', value)}>
+              <Select name="role" value={formData.role || 'oic'} onValueChange={(value) => { handleSelectChange('role', value); setFormData(prev => ({...prev, departmentID: '', clubID: ''}))}}>
                 <SelectTrigger className="col-span-3">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -250,16 +262,18 @@ export default function UserManagementPage() {
                   <SelectItem value="club_admin">Club Admin</SelectItem>
                   <SelectItem value="department_admin">Department Admin</SelectItem>
                   <SelectItem value="oic">OIC</SelectItem>
+                  {/* <SelectItem value="student">Student</SelectItem>  Students are typically registered */}
                 </SelectContent>
               </Select>
             </div>
-            {formData.role === 'department_admin' || formData.role === 'oic' && (
+            {(formData.role === 'department_admin' || formData.role === 'oic') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="departmentID" className="text-right">Department</Label>
                 <Select name="departmentID" value={formData.departmentID || ''} onValueChange={(value) => handleSelectChange('departmentID', value)}>
-                  <SelectTrigger className="col-span-3"> <SelectValue placeholder="Assign Department" /> </SelectTrigger>
+                  <SelectTrigger className="col-span-3"> <SelectValue placeholder="Assign Department (Optional for OIC)" /> </SelectTrigger>
                   <SelectContent>
-                    {PredefinedDepartments.map(dept => <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>)}
+                    <SelectItem value="">None</SelectItem>
+                    {allDepartments.map(dept => <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -270,10 +284,24 @@ export default function UserManagementPage() {
                  <Select name="clubID" value={formData.clubID || ''} onValueChange={(value) => handleSelectChange('clubID', value)}>
                   <SelectTrigger className="col-span-3"> <SelectValue placeholder="Assign Club" /> </SelectTrigger>
                   <SelectContent>
-                    {mockClubs.map(club => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}
+                     <SelectItem value="">None</SelectItem>
+                    {allClubs.map(club => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
+            )}
+             {/* OIC can also be assigned to a club directly */}
+            {formData.role === 'oic' && (
+                 <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="assignedClubId" className="text-right">Assigned Club (OIC)</Label>
+                    <Select name="assignedClubId" value={formData.assignedClubId || ''} onValueChange={(value) => handleSelectChange('assignedClubId', value)}>
+                        <SelectTrigger className="col-span-3"> <SelectValue placeholder="Assign to specific Club (Optional)" /> </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {allClubs.map(club => <SelectItem key={club.id} value={club.id}>{club.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                 </div>
             )}
           </div>
           <DialogFooter>

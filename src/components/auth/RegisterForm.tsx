@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth, PredefinedDepartments } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
@@ -37,6 +38,7 @@ const formSchema = z.object({
 export function RegisterForm() {
   const { registerStudent } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -51,10 +53,10 @@ export function RegisterForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    registerStudent(values.fullName, values.email, values.departmentId);
-    // No need to setIsLoading(false) as page will redirect
+    await new Promise(resolve => setTimeout(resolve, 500));
+    registerStudent(values.fullName, values.email, values.departmentId, values.password);
+    // registerStudent handles navigation or toast for errors.
+    setTimeout(() => setIsLoading(false), 1000);
   }
 
   return (

@@ -4,23 +4,28 @@
 import type { UserRole, UserProfile, Department, Club } from '@/types/user';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
-  login: (email: string) => void;
+  login: (email: string, passwordAttempt: string) => void;
   logout: () => void;
-  registerStudent: (fullName: string, email: string, departmentId: string) => void;
-  allUsers: UserProfile[]; // To simulate a user database
-  updateUserClub: (userId: string, clubId: string | null) => void; // For club member management
+  registerStudent: (fullName: string, email: string, departmentId: string, passwordAttempt: string) => void;
+  allUsers: UserProfile[]; 
+  updateUserClub: (userId: string, clubId: string | null) => void; 
   addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
+  updateUser: (updatedUser: UserProfile) => void; // For SSG user management
+  addUser: (newUser: UserProfile) => void; // For SSG user management
+  deleteUser: (userId: string) => void; // For SSG user management
   allClubs: Club[];
   allDepartments: Department[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Define default departments
+const defaultPassword = "password123";
+
 const defaultDepartments: Department[] = [
   { id: 'dept_bs_tourism', name: 'BS Tourism Management' },
   { id: 'dept_bs_it', name: 'BS Information Technology' },
@@ -30,7 +35,6 @@ const defaultDepartments: Department[] = [
   { id: 'dept_bs_ais', name: 'BS Accounting Information System' },
 ];
 
-// Define default clubs
 const defaultClubs: Club[] = [
   { id: 'club_robotics', name: 'Robotics Club', departmentId: 'dept_bs_it', description: 'Exploring the world of robotics and automation.' },
   { id: 'club_tourism_soc', name: 'Tourism Society', departmentId: 'dept_bs_tourism', description: 'Promoting tourism awareness and hospitality skills.' },
@@ -38,27 +42,20 @@ const defaultClubs: Club[] = [
   { id: 'club_eco_warriors', name: 'Eco Warriors Club', description: 'Advocating for environmental sustainability on campus.' },
 ];
 
-
-// Mock user data for various roles and scenarios
 const initialMockUsers: UserProfile[] = [
-  // SSG Admin
-  { userID: 'ssg001', email: 'ssg.superadmin@yourcampus.edu', fullName: 'Super Admin', role: 'ssg_admin' },
-  // Club Admins
-  { userID: 'ca001', email: 'clubadmin.robotics@example.com', fullName: 'Alice Wonderland (Robotics CA)', role: 'club_admin', clubID: 'club_robotics' },
-  { userID: 'ca002', email: 'clubadmin.tourism@example.com', fullName: 'Bob The Builder (Tourism CA)', role: 'club_admin', clubID: 'club_tourism_soc' },
-  // Department Admins
-  { userID: 'da001', email: 'deptadmin.it@example.com', fullName: 'Charlie Chaplin (IT DA)', role: 'department_admin', departmentID: 'dept_bs_it' },
-  { userID: 'da002', email: 'deptadmin.tourism@example.com', fullName: 'Diana Prince (Tourism DA)', role: 'department_admin', departmentID: 'dept_bs_tourism' },
-  // OICs (some affiliated with departments, some potentially managed by clubs later)
-  { userID: 'oic001', email: 'oic.tech@example.com', fullName: 'Edward Scissorhands (OIC)', role: 'oic', departmentID: 'dept_bs_it' },
-  { userID: 'oic002', email: 'oic.events@example.com', fullName: 'Fiona Gallagher (OIC)', role: 'oic', departmentID: 'dept_bs_tourism' },
-  { userID: 'oic003', email: 'oic.security@example.com', fullName: 'Gregory House (OIC)', role: 'oic', assignedClubId: 'club_robotics' }, // Example of OIC assigned to a club by SSG/Club Admin
-  // Students
-  { userID: 'stud001', email: 'john.doe@example.com', fullName: 'John Doe', role: 'student', departmentID: 'dept_bs_it', clubID: 'club_robotics', qrCodeID: 'qr_john_doe', points: 150 },
-  { userID: 'stud002', email: 'jane.smith@example.com', fullName: 'Jane Smith', role: 'student', departmentID: 'dept_bs_tourism', clubID: 'club_tourism_soc', qrCodeID: 'qr_jane_smith', points: 120 },
-  { userID: 'stud003', email: 'peter.pan@example.com', fullName: 'Peter Pan', role: 'student', departmentID: 'dept_bs_criminology', qrCodeID: 'qr_peter_pan', points: 90 },
-  { userID: 'stud004', email: 'lucy.heart@example.com', fullName: 'Lucy Heartfilia', role: 'student', departmentID: 'dept_bs_it', qrCodeID: 'qr_lucy_heart', points: 200 },
-  { userID: 'stud005', email: 'bruce.wayne@example.com', fullName: 'Bruce Wayne', role: 'student', departmentID: 'dept_bs_criminology', clubID: 'club_debate', qrCodeID: 'qr_bruce_wayne', points: 50 },
+  { userID: 'ssg001', email: 'ssg.superadmin@yourcampus.edu', fullName: 'Super Admin', role: 'ssg_admin', password: defaultPassword },
+  { userID: 'ca001', email: 'clubadmin.robotics@example.com', fullName: 'Alice Wonderland (Robotics CA)', role: 'club_admin', clubID: 'club_robotics', password: defaultPassword },
+  { userID: 'ca002', email: 'clubadmin.tourism@example.com', fullName: 'Bob The Builder (Tourism CA)', role: 'club_admin', clubID: 'club_tourism_soc', password: defaultPassword },
+  { userID: 'da001', email: 'deptadmin.it@example.com', fullName: 'Charlie Chaplin (IT DA)', role: 'department_admin', departmentID: 'dept_bs_it', password: defaultPassword },
+  { userID: 'da002', email: 'deptadmin.tourism@example.com', fullName: 'Diana Prince (Tourism DA)', role: 'department_admin', departmentID: 'dept_bs_tourism', password: defaultPassword },
+  { userID: 'oic001', email: 'oic.tech@example.com', fullName: 'Edward Scissorhands (OIC)', role: 'oic', departmentID: 'dept_bs_it', password: defaultPassword },
+  { userID: 'oic002', email: 'oic.events@example.com', fullName: 'Fiona Gallagher (OIC)', role: 'oic', departmentID: 'dept_bs_tourism', password: defaultPassword },
+  { userID: 'oic003', email: 'oic.security@example.com', fullName: 'Gregory House (OIC)', role: 'oic', assignedClubId: 'club_robotics', password: defaultPassword },
+  { userID: 'stud001', email: 'john.doe@example.com', fullName: 'John Doe', role: 'student', departmentID: 'dept_bs_it', clubID: 'club_robotics', qrCodeID: 'qr_john_doe', points: 150, password: defaultPassword },
+  { userID: 'stud002', email: 'jane.smith@example.com', fullName: 'Jane Smith', role: 'student', departmentID: 'dept_bs_tourism', clubID: 'club_tourism_soc', qrCodeID: 'qr_jane_smith', points: 120, password: defaultPassword },
+  { userID: 'stud003', email: 'peter.pan@example.com', fullName: 'Peter Pan', role: 'student', departmentID: 'dept_bs_criminology', qrCodeID: 'qr_peter_pan', points: 90, password: defaultPassword },
+  { userID: 'stud004', email: 'lucy.heart@example.com', fullName: 'Lucy Heartfilia', role: 'student', departmentID: 'dept_bs_it', qrCodeID: 'qr_lucy_heart', points: 200, password: defaultPassword },
+  { userID: 'stud005', email: 'bruce.wayne@example.com', fullName: 'Bruce Wayne', role: 'student', departmentID: 'dept_bs_criminology', clubID: 'club_debate', qrCodeID: 'qr_bruce_wayne', points: 50, password: defaultPassword },
 ];
 
 
@@ -68,24 +65,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allUsers, setAllUsers] = useState<UserProfile[]>(initialMockUsers);
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem('campusConnectUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      // Ensure the stored user exists in our canonical list or is a newly registered one
       const canonicalUser = allUsers.find(u => u.userID === parsedUser.userID);
       if (canonicalUser) {
-        setUser(canonicalUser); // Use the potentially updated canonical user data
-      } else if (parsedUser.role === 'student' && parsedUser.qrCodeId) { // Likely a newly registered student
+        setUser(canonicalUser); 
+      } else if (parsedUser.role === 'student' && parsedUser.qrCodeId) { 
         setUser(parsedUser);
-        if(!allUsers.find(u => u.userID === parsedUser.userID)) { // Add to allUsers if not already there
+        if(!allUsers.find(u => u.userID === parsedUser.userID)) { 
             setAllUsers(prev => [...prev, parsedUser]);
         }
       }
     }
     setLoading(false);
-  }, [allUsers]); // Added allUsers dependency
+  }, [allUsers]);
 
   useEffect(() => {
     if (!loading && !user && !['/login', '/register'].includes(pathname)) {
@@ -103,33 +100,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, loading, pathname, router]);
 
 
-  const login = (email: string) => {
+  const login = (email: string, passwordAttempt: string) => {
     const foundUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
     
     if (foundUser) {
-      localStorage.setItem('campusConnectUser', JSON.stringify(foundUser));
-      setUser(foundUser);
+      // For student role, password check is simplified for this mock. 
+      // For other roles, we check the password.
+      if (foundUser.role === 'student' || foundUser.password === passwordAttempt) {
+        localStorage.setItem('campusConnectUser', JSON.stringify(foundUser));
+        setUser(foundUser);
+         toast({ title: "Login Successful", description: `Welcome back, ${foundUser.fullName}!` });
+      } else {
+        toast({ title: "Login Failed", description: "Invalid email or password.", variant: "destructive" });
+      }
     } else {
-      // Fallback for unregistered emails - create a default student profile for testing
-      const defaultStudent: UserProfile = {
-        userID: 'user-' + Math.random().toString(36).substr(2, 9),
-        email,
-        fullName: email.split('@')[0] || 'New Student',
-        role: 'student',
-        departmentID: defaultDepartments[Math.floor(Math.random() * defaultDepartments.length)].id, // Assign a random department
-        qrCodeID: 'qr-' + Math.random().toString(36).substr(2, 9),
-        points: 0,
-      };
-      localStorage.setItem('campusConnectUser', JSON.stringify(defaultStudent));
-      setUser(defaultStudent);
-      setAllUsers(prev => [...prev, defaultStudent]); // Add to mock DB
+      toast({ title: "Login Failed", description: "User not found.", variant: "destructive" });
     }
   };
 
-  const registerStudent = (fullName: string, email: string, departmentId: string) => {
+  const registerStudent = (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
     const existingUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (existingUser) {
-        alert("Email already registered. Please login or use a different email."); // Or use a toast
+        toast({ title: "Registration Failed", description: "Email already registered.", variant: "destructive" });
         return;
     }
 
@@ -139,12 +131,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fullName,
       role: 'student',
       departmentID: departmentId,
+      password: passwordAttempt, // Store the password
       qrCodeID: 'qr-' + Math.random().toString(36).substr(2, 9),
       points: 0,
     };
     localStorage.setItem('campusConnectUser', JSON.stringify(newStudent));
     setUser(newStudent);
-    setAllUsers(prev => [...prev, newStudent]); // Add to mock DB
+    setAllUsers(prev => [...prev, newStudent]); 
+    toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
     router.push('/student/dashboard');
   };
 
@@ -160,7 +154,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         u.userID === userId ? { ...u, clubID: clubId || undefined } : u
       )
     );
-    // If the currently logged-in user is the one being updated, update their local state too
     if (user && user.userID === userId) {
       const updatedUser = { ...user, clubID: clubId || undefined };
       setUser(updatedUser);
@@ -170,7 +163,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const addNewOIC = async (fullName: string, email: string): Promise<{success: boolean, message: string}> => {
     return new Promise((resolve) => {
-      // Simulate API call delay
       setTimeout(() => {
         const existingUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
         if (existingUser) {
@@ -183,14 +175,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email,
           fullName,
           role: 'oic',
-          // Optionally assign a default department or leave it undefined for this quick add
-          // departmentID: defaultDepartments[0].id 
+          password: defaultPassword, 
         };
         setAllUsers(prev => [...prev, newOIC]);
         resolve({ success: true, message: "New OIC added successfully." });
       }, 500);
     });
   };
+
+  const updateUser = (updatedUser: UserProfile) => {
+    setAllUsers(prevUsers => prevUsers.map(u => u.userID === updatedUser.userID ? updatedUser : u));
+    if (user && user.userID === updatedUser.userID) {
+      setUser(updatedUser);
+      localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
+    }
+  };
+
+  const addUser = (newUser: UserProfile) => {
+    setAllUsers(prevUsers => [...prevUsers, newUser]);
+  };
+
+  const deleteUser = (userId: string) => {
+    setAllUsers(prevUsers => prevUsers.filter(u => u.userID !== userId));
+     if (user && user.userID === userId) { // If deleting self, logout
+        logout();
+    }
+  };
+
 
   return (
     <AuthContext.Provider value={{ 
@@ -202,6 +213,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         allUsers, 
         updateUserClub,
         addNewOIC,
+        updateUser,
+        addUser,
+        deleteUser,
         allClubs: defaultClubs,
         allDepartments: defaultDepartments,
     }}>
