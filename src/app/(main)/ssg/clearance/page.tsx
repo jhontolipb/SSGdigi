@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { ClearanceRequest, ApprovalStatus } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label'; // Added missing import
 
 export default function ClearanceApprovalPage() {
   const { user, allClearanceRequests, fetchAllClearanceRequests, updateSsgClearanceStatus, loading: authLoading } = useAuth();
@@ -254,3 +255,4 @@ export default function ClearanceApprovalPage() {
     </div>
   );
 }
+
