@@ -49,18 +49,6 @@ const defaultClubs: Club[] = [
 
 const initialMockUsers: UserProfile[] = [
   { userID: 'ssg001', email: 'ssg.superadmin@yourcampus.edu', fullName: 'Super Admin', role: 'ssg_admin', password: defaultPassword },
-  { userID: 'ca001', email: 'clubadmin.robotics@example.com', fullName: 'Alice Wonderland (Robotics CA)', role: 'club_admin', clubID: 'club_robotics', password: defaultPassword },
-  { userID: 'ca002', email: 'clubadmin.tourism@example.com', fullName: 'Bob The Builder (Tourism CA)', role: 'club_admin', clubID: 'club_tourism_soc', password: defaultPassword },
-  { userID: 'da001', email: 'deptadmin.it@example.com', fullName: 'Charlie Chaplin (IT DA)', role: 'department_admin', departmentID: 'dept_bs_it', password: defaultPassword },
-  { userID: 'da002', email: 'deptadmin.tourism@example.com', fullName: 'Diana Prince (Tourism DA)', role: 'department_admin', departmentID: 'dept_bs_tourism', password: defaultPassword },
-  { userID: 'oic001', email: 'oic.tech@example.com', fullName: 'Edward Scissorhands (OIC)', role: 'oic', departmentID: 'dept_bs_it', password: defaultPassword },
-  { userID: 'oic002', email: 'oic.events@example.com', fullName: 'Fiona Gallagher (OIC)', role: 'oic', departmentID: 'dept_bs_tourism', password: defaultPassword },
-  { userID: 'oic003', email: 'oic.security@example.com', fullName: 'Gregory House (OIC)', role: 'oic', assignedClubId: 'club_robotics', password: defaultPassword },
-  { userID: 'stud001', email: 'john.doe@example.com', fullName: 'John Doe', role: 'student', departmentID: 'dept_bs_it', clubID: 'club_robotics', qrCodeID: 'qr_john_doe', points: 150, password: defaultPassword },
-  { userID: 'stud002', email: 'jane.smith@example.com', fullName: 'Jane Smith', role: 'student', departmentID: 'dept_bs_tourism', clubID: 'club_tourism_soc', qrCodeID: 'qr_jane_smith', points: 120, password: defaultPassword },
-  { userID: 'stud003', email: 'peter.pan@example.com', fullName: 'Peter Pan', role: 'student', departmentID: 'dept_bs_criminology', qrCodeID: 'qr_peter_pan', points: 90, password: defaultPassword },
-  { userID: 'stud004', email: 'lucy.heart@example.com', fullName: 'Lucy Heartfilia', role: 'student', departmentID: 'dept_bs_it', qrCodeID: 'qr_lucy_heart', points: 200, password: defaultPassword },
-  { userID: 'stud005', email: 'bruce.wayne@example.com', fullName: 'Bruce Wayne', role: 'student', departmentID: 'dept_bs_criminology', clubID: 'club_debate', qrCodeID: 'qr_bruce_wayne', points: 50, password: defaultPassword },
 ];
 
 const initialMockEvents: Event[] = [];
@@ -80,8 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = localStorage.getItem('campusConnectUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      // Ensure the stored user is re-validated against the potentially updated allUsers list later
-      // For now, just set it, but if allUsers changes, this might need re-syncing or a check
       setUser(parsedUser);
     }
 
@@ -92,27 +78,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const parsedAllUsers = JSON.parse(storedAllUsers);
             if (Array.isArray(parsedAllUsers) && parsedAllUsers.every(u => u.userID && u.email && u.fullName && u.role)) { // Basic validation
                 setAllUsers(parsedAllUsers);
-                 // Re-validate current user if it was loaded from localStorage
                 if (storedUser) {
                     const parsedCurrentUser = JSON.parse(storedUser);
                     const canonicalUser = parsedAllUsers.find(u => u.userID === parsedCurrentUser.userID);
                     if (canonicalUser) {
                         setUser(canonicalUser);
-                    } else { // Current user in storage no longer exists in allUsers
+                    } else { 
                         localStorage.removeItem('campusConnectUser');
                         setUser(null);
                     }
                 }
-            } else {
+            } else { // Invalid data in localStorage, reset with initial (superadmin only)
                 localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
                 setAllUsers(initialMockUsers);
+                // If current user was in bad data, clear them too
+                if (user && !initialMockUsers.find(u => u.userID === user.userID)) {
+                    localStorage.removeItem('campusConnectUser');
+                    setUser(null);
+                }
             }
         } catch (e) {
             console.error("Failed to parse allMockUsers from localStorage", e);
             localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
             setAllUsers(initialMockUsers);
+             if (user && !initialMockUsers.find(u => u.userID === user.userID)) {
+                localStorage.removeItem('campusConnectUser');
+                setUser(null);
+            }
         }
-    } else {
+    } else { // No stored users, initialize with superadmin only
         localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
         setAllUsers(initialMockUsers);
     }
@@ -122,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedEvents) {
         try {
             const parsedEvents = JSON.parse(storedEvents);
-            if (Array.isArray(parsedEvents)) { // Add more validation if needed
+            if (Array.isArray(parsedEvents)) { 
                 setAllEvents(parsedEvents);
             } else {
                 localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
@@ -347,8 +341,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         addUser,
         deleteUser,
         changePassword,
-        allClubs: defaultClubs, // These remain static for now, not from localStorage
-        allDepartments: defaultDepartments, // These remain static for now
+        allClubs: defaultClubs, 
+        allDepartments: defaultDepartments, 
         allEvents,
         addEvent,
         updateEvent,
