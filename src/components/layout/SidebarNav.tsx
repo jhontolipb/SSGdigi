@@ -20,6 +20,7 @@ const navLinks: Record<UserRole, NavItem[]> = {
   ssg_admin: [
     { href: '/ssg/dashboard', label: 'Dashboard', icon: Home },
     { href: '/ssg/users', label: 'User Management', icon: Users },
+    { href: '/ssg/oic', label: 'OIC Management', icon: UserCog },
     { href: '/ssg/departments', label: 'Departments', icon: Building },
     { href: '/ssg/clubs', label: 'Clubs', icon: Shield },
     { href: '/ssg/events', label: 'Events', icon: CalendarDays },
