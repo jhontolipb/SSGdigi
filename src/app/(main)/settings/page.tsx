@@ -64,7 +64,6 @@ export default function SettingsPage() {
     if (storedSettings) {
       try {
         const parsedSettings = JSON.parse(storedSettings);
-        // Ensure parsed settings have all keys from current config, fill missing with defaults
         const completeSettings = getDefaultThemeSettings();
         for (const key in parsedSettings) {
           if (colorConfigurations[key] && parsedSettings[key]) {
@@ -82,7 +81,7 @@ export default function SettingsPage() {
   }, []);
   
   useEffect(() => {
-    if(isMounted) { // Apply theme only after loading from local storage
+    if(isMounted) { 
         applyTheme(themeSettings);
     }
   }, [themeSettings, applyTheme, isMounted]);
@@ -116,7 +115,7 @@ export default function SettingsPage() {
   };
 
   if (!isMounted) {
-    return <div className="p-6">Loading settings...</div>; // Or a skeleton loader
+    return <div className="p-6">Loading settings...</div>;
   }
 
   return (
@@ -132,43 +131,48 @@ export default function SettingsPage() {
           {Object.entries(colorConfigurations).map(([key, config]) => {
             const currentColor = themeSettings[key] || config.defaultHSL;
             return (
-              <div key={key} className="space-y-3 p-4 border rounded-lg shadow-sm bg-muted/20">
-                <div className="flex items-center justify-between">
-                  <Label className="text-lg font-semibold">{config.label}</Label>
-                  <div 
-                    style={{ backgroundColor: `hsl(${currentColor.h}, ${currentColor.s}%, ${currentColor.l}%)` }} 
-                    className="w-10 h-10 rounded-md border shadow"
-                  />
-                </div>
-                
-                {(['h', 's', 'l'] as Array<keyof HSLColor>).map(hslKey => (
-                  <div key={hslKey} className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <Label htmlFor={`${key}-${hslKey}`} className="capitalize">{hslKey}:</Label>
-                      <Input
-                        id={`${key}-${hslKey}-value`}
-                        type="number"
-                        value={currentColor[hslKey]}
-                        onChange={(e) => handleColorChange(key, hslKey, parseInt(e.target.value, 10) || 0)}
-                        min={0}
-                        max={hslKey === 'h' ? 360 : 100}
-                        className="w-20 h-8 text-sm"
-                      />
+              <Card key={key} className="p-4 shadow-md bg-muted/20">
+                <CardHeader className="p-2 mb-3">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">{config.label}</CardTitle>
+                        <div 
+                            style={{ backgroundColor: `hsl(${currentColor.h}, ${currentColor.s}%, ${currentColor.l}%)` }} 
+                            className="w-10 h-10 rounded-md border shadow-inner"
+                        />
                     </div>
-                    <Slider
-                      id={`${key}-${hslKey}`}
-                      value={[currentColor[hslKey]]}
-                      onValueChange={([val]) => handleColorChange(key, hslKey, val)}
-                      max={hslKey === 'h' ? 360 : 100}
-                      step={1}
-                      className="my-1"
-                    />
-                  </div>
-                ))}
-              </div>
+                </CardHeader>
+                <CardContent className="p-2 space-y-4">
+                    {(['h', 's', 'l'] as Array<keyof HSLColor>).map(hslKey => (
+                    <div key={hslKey} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                        <Label htmlFor={`${key}-${hslKey}-slider`} className="capitalize text-sm font-medium">
+                            {hslKey.toUpperCase()}:
+                        </Label>
+                        <Input
+                            id={`${key}-${hslKey}-value`}
+                            type="number"
+                            value={currentColor[hslKey]}
+                            onChange={(e) => handleColorChange(key, hslKey, parseInt(e.target.value, 10) || 0)}
+                            min={0}
+                            max={hslKey === 'h' ? 360 : 100}
+                            className="w-20 h-8 rounded-md border-input px-2 py-1 text-sm text-center"
+                        />
+                        </div>
+                        <Slider
+                            id={`${key}-${hslKey}-slider`}
+                            value={[currentColor[hslKey]]}
+                            onValueChange={([val]) => handleColorChange(key, hslKey, val)}
+                            max={hslKey === 'h' ? 360 : 100}
+                            step={1}
+                            className="my-1"
+                        />
+                    </div>
+                    ))}
+                </CardContent>
+              </Card>
             );
           })}
-          <div className="flex gap-4 pt-6 border-t">
+          <div className="flex gap-4 pt-6 border-t mt-8">
             <Button onClick={handleSaveSettings} className="bg-primary hover:bg-primary/90">
               <Save className="mr-2 h-4 w-4" /> Save Settings
             </Button>

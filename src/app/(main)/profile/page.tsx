@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react"; // Added useEffect
 import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -86,14 +86,17 @@ export default function ProfilePage() {
       toast({ title: "Success", description: result.message });
       setIsPasswordDialogOpen(false);
       passwordForm.reset();
+    } else {
+      // toast for failure is handled by authChangePassword or here if specific form error needed
+      // passwordForm.setError("currentPassword", { type: "manual", message: result.message }); // Example
     }
     setIsPasswordChanging(false);
   };
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container mx-auto py-8 space-y-6">
       <Card className="max-w-2xl mx-auto shadow-lg">
-        <CardHeader className="text-center">
+        <CardHeader className="text-center items-center">
           <Avatar className="w-24 h-24 mx-auto mb-4 border-2 border-primary">
             <AvatarImage src={`https://placehold.co/150x150.png?text=${getInitials(user.fullName)}`} alt={user.fullName} data-ai-hint="profile picture" />
             <AvatarFallback className="text-3xl">{getInitials(user.fullName)}</AvatarFallback>
@@ -101,132 +104,132 @@ export default function ProfilePage() {
           <CardTitle className="text-2xl font-headline">{user.fullName}</CardTitle>
           <CardDescription className="capitalize">{user.role.replace('_', ' ')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           <div>
             <Label htmlFor="email">Email</Label>
-            <Input id="email" value={user.email} readOnly disabled />
+            <Input id="email" value={user.email} readOnly disabled className="mt-1"/>
           </div>
 
-          {user.role === 'student' && ( // departmentID might not be set if user is not a student or data is incomplete
+          {user.role === 'student' && (
             <div>
               <Label htmlFor="department">Department</Label>
-              <Input id="department" value={departmentName} readOnly disabled />
+              <Input id="department" value={departmentName} readOnly disabled className="mt-1"/>
             </div>
           )}
 
           {user.role === 'student' && user.points !== undefined && (
             <div>
               <Label htmlFor="points">Points</Label>
-              <Input id="points" value={user.points.toString()} readOnly disabled />
+              <Input id="points" value={user.points.toString()} readOnly disabled className="mt-1"/>
             </div>
           )}
+        </CardContent>
+        <CardFooter>
+            <Button className="w-full" disabled>Update Profile Details (Not Implemented)</Button>
+        </CardFooter>
+      </Card>
 
-          <Separator />
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-xl">Account Settings</CardTitle>
-            </CardHeader>
-            <CardContent>
-               <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <KeyRound className="mr-2 h-4 w-4" /> Change Password
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Change Your Password</DialogTitle>
-                    <DialogDescription>
-                      Enter your current password and a new password.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...passwordForm}>
-                    <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4 pt-4">
-                      <FormField
-                        control={passwordForm.control}
-                        name="currentPassword"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Current Password</FormLabel>
-                            <FormControl>
-                              <Input type="password" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={passwordForm.control}
-                        name="newPassword"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>New Password</FormLabel>
-                            <FormControl>
-                              <Input type="password" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={passwordForm.control}
-                        name="confirmNewPassword"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Confirm New Password</FormLabel>
-                            <FormControl>
-                              <Input type="password" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)} disabled={isPasswordChanging}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={isPasswordChanging} className="bg-primary hover:bg-primary/90">
-                          {isPasswordChanging && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Save Password
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </CardContent>
-          </Card>
-
-
-          {user.role === 'student' && user.qrCodeID && (
-            <>
-              <Separator />
-              <div className="text-center space-y-2">
-                <h3 className="text-lg font-semibold">My QR Code ID</h3>
-                <div className="flex justify-center">
-                  <Image
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(user.qrCodeID)}`}
-                    alt="Student QR Code"
-                    width={200}
-                    height={200}
-                    data-ai-hint="QR code"
-                    className="rounded-md shadow-md"
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground">QR Code ID: {user.qrCodeID}</p>
-                <Button variant="outline" onClick={() => alert("Download QR functionality to be implemented.")} disabled>
-                  Download QR Code (Not Impl.)
+      <Card className="max-w-2xl mx-auto shadow-lg">
+        <CardHeader>
+            <CardTitle className="text-xl">Account Settings</CardTitle>
+            <CardDescription>Manage your account preferences.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline">
+                <KeyRound className="mr-2 h-4 w-4" /> Change Password
                 </Button>
-              </div>
-            </>
-          )}
-
-          <Button className="w-full mt-4" disabled>Update Profile Details (Not implemented)</Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                <DialogTitle>Change Your Password</DialogTitle>
+                <DialogDescription>
+                    Enter your current password and a new password.
+                </DialogDescription>
+                </DialogHeader>
+                <Form {...passwordForm}>
+                <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4 pt-4">
+                    <FormField
+                    control={passwordForm.control}
+                    name="currentPassword"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Current Password</FormLabel>
+                        <FormControl>
+                            <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                    <FormField
+                    control={passwordForm.control}
+                    name="newPassword"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>New Password</FormLabel>
+                        <FormControl>
+                            <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                    <FormField
+                    control={passwordForm.control}
+                    name="confirmNewPassword"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Confirm New Password</FormLabel>
+                        <FormControl>
+                            <Input type="password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                    <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)} disabled={isPasswordChanging}>
+                        Cancel
+                    </Button>
+                    <Button type="submit" disabled={isPasswordChanging} className="bg-primary hover:bg-primary/90">
+                        {isPasswordChanging && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Password
+                    </Button>
+                    </DialogFooter>
+                </form>
+                </Form>
+            </DialogContent>
+            </Dialog>
         </CardContent>
       </Card>
+
+
+      {user.role === 'student' && user.qrCodeID && (
+        <Card className="max-w-2xl mx-auto shadow-lg">
+            <CardHeader>
+                <CardTitle className="text-xl">My QR Code</CardTitle>
+                <CardDescription>Use this QR code for event attendance and identification.</CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-2">
+            <div className="flex justify-center">
+                <Image
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(user.qrCodeID)}`}
+                alt="Student QR Code"
+                width={200}
+                height={200}
+                data-ai-hint="QR code"
+                className="rounded-md shadow-md border"
+                />
+            </div>
+            <p className="text-sm text-muted-foreground pt-2">QR Code ID: {user.qrCodeID}</p>
+            <Button variant="outline" onClick={() => alert("Download QR functionality to be implemented.")} disabled>
+                Download QR Code (Not Impl.)
+            </Button>
+            </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
-
-    
