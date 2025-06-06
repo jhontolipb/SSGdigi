@@ -3,18 +3,17 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { QrCode, CalendarDays, FileText, MessageSquare, Award, Bell, Icon } from "lucide-react"; // Added Icon
+import { QrCode, CalendarDays, FileText, MessageSquare, Award, Bell, Icon } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image"; // Keep for profile avatar logic if used elsewhere, but remove for quick links
 import { useAuth } from "@/contexts/AuthContext";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Added Avatar, AvatarFallback
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useState, useEffect } from 'react';
 
-const studentDashboardData = {
-  upcomingEvents: 0,
-  clearanceStatus: "Not Requested",
-  unreadMessages: 0,
-  currentPoints: 0, // Will be fetched from user context
-};
+interface StudentDashboardData {
+  upcomingEvents: number;
+  clearanceStatus: string;
+  unreadMessages: number;
+}
 
 const quickAccessLinks: { href: string; label: string; icon: React.ElementType; dataAiHint?: string }[] = [
   { href: '/student/qr-code', label: 'My QR Code', icon: QrCode, dataAiHint: "QR code display" },
@@ -25,17 +24,38 @@ const quickAccessLinks: { href: string; label: string; icon: React.ElementType; 
   { href: '/notifications', label: 'Notifications', icon: Bell, dataAiHint: "notification bell" },
 ];
 
-const recentNotifications: {id: string; text: string; time: string}[] = [
-    // No mock notifications
-];
+const recentNotifications: {id: string; text: string; time: string}[] = [];
 
 
 export default function StudentDashboardPage() {
-  const { user } = useAuth();
+  const { user, allEvents } = useAuth(); // Added allEvents
+  const [dashboardData, setDashboardData] = useState<StudentDashboardData>({
+    upcomingEvents: 0,
+    clearanceStatus: "Not Requested",
+    unreadMessages: 0,
+  });
 
   const currentPoints = user?.points ?? 0;
-  // In a real app, other dashboard data would be fetched
-  // For now, we use the default values or derive from user context if available
+
+  useEffect(() => {
+    // In a real app, clearanceStatus and unreadMessages would be fetched.
+    // For upcomingEvents, we can count from allEvents (if available and relevant).
+    const relevantEventsCount = allEvents.filter(event => {
+      // Basic logic: show all events. Could be filtered by student's dept/club in real app.
+      // Also, filter for events that are 'upcoming' (date >= today)
+      const eventDate = new Date(event.date);
+      const today = new Date();
+      today.setHours(0,0,0,0); // Normalize today to start of day
+      return eventDate >= today;
+    }).length;
+
+    setDashboardData(prev => ({
+      ...prev,
+      upcomingEvents: relevantEventsCount,
+      // clearanceStatus and unreadMessages remain placeholders for now
+    }));
+  }, [allEvents]);
+
 
   return (
     <div className="space-y-6">
@@ -48,7 +68,7 @@ export default function StudentDashboardPage() {
             <CalendarDays className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{studentDashboardData.upcomingEvents}</div>
+            <div className="text-2xl font-bold">{dashboardData.upcomingEvents}</div>
             <Link href="/student/events" className="text-xs text-primary hover:underline">View all</Link>
           </CardContent>
         </Card>
@@ -58,7 +78,7 @@ export default function StudentDashboardPage() {
             <FileText className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-bold">{studentDashboardData.clearanceStatus}</div>
+            <div className="text-lg font-bold">{dashboardData.clearanceStatus}</div>
             <Link href="/student/clearance" className="text-xs text-primary hover:underline">Track progress</Link>
           </CardContent>
         </Card>
@@ -68,7 +88,7 @@ export default function StudentDashboardPage() {
             <MessageSquare className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{studentDashboardData.unreadMessages}</div>
+            <div className="text-2xl font-bold">{dashboardData.unreadMessages}</div>
             <Link href="/messages" className="text-xs text-primary hover:underline">Go to inbox</Link>
           </CardContent>
         </Card>
@@ -130,3 +150,4 @@ export default function StudentDashboardPage() {
     </div>
   );
 }
+

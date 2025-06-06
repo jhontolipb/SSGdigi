@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Award, Star, TrendingUp, TrendingDown, History } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useState, useEffect } from 'react'; // Added for state
+import { useState, useEffect } from 'react';
 
 interface PointTransaction {
   id: string;
@@ -86,3 +86,4 @@ export default function StudentPointsPage() {
     </div>
   );
 }
+

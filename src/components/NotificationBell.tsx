@@ -31,7 +31,6 @@ export function NotificationBell() {
 
   useEffect(() => {
     setMounted(true);
-    // In a real app, fetch notifications
     setNotifications(initialNotifications);
   }, []);
 
@@ -86,3 +85,4 @@ export function NotificationBell() {
     </DropdownMenu>
   );
 }
+

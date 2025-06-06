@@ -8,10 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListChecks, CheckCircle, XCircle, MoreHorizontal, Filter, Search, FileText } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"; // Removed DialogDescription
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { ClearanceRequest as ClearanceRequestType, ApprovalStatus } from '@/types/user'; // Renamed to avoid conflict
+import type { ClearanceRequest as ClearanceRequestType, ApprovalStatus } from '@/types/user';
 
 const initialRequests: ClearanceRequestType[] = [];
 
@@ -25,7 +25,6 @@ export default function ClearanceApprovalPage() {
 
 
   useEffect(() => {
-    // In a real app, fetch requests from a backend
     setRequests(initialRequests);
   }, []);
 
@@ -33,7 +32,7 @@ export default function ClearanceApprovalPage() {
     let result = requests;
     if (searchTerm) {
       result = result.filter(req => 
-        (req.studentUserID && req.studentUserID.toLowerCase().includes(searchTerm.toLowerCase())) || // Assuming studentUserID is used for name search
+        (req.studentUserID && req.studentUserID.toLowerCase().includes(searchTerm.toLowerCase())) || 
         req.requestID.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
@@ -121,7 +120,7 @@ export default function ClearanceApprovalPage() {
               <TableBody>
                 {filteredRequests.map((req) => (
                   <TableRow key={req.requestID}>
-                    <TableCell className="font-medium">{req.studentUserID}</TableCell> {/* Display studentUserID */}
+                    <TableCell className="font-medium">{req.studentUserID}</TableCell>
                     <TableCell>{req.requestID}</TableCell>
                     <TableCell>{getStatusBadge(req.clubApprovalStatus)}</TableCell>
                     <TableCell>{getStatusBadge(req.departmentApprovalStatus)}</TableCell>
@@ -151,10 +150,16 @@ export default function ClearanceApprovalPage() {
                     </TableCell>
                   </TableRow>
                 ))}
+                 {filteredRequests.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
+                      No clearance requests found matching your criteria.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
-          {filteredRequests.length === 0 && <p className="text-center text-muted-foreground py-10">No clearance requests found matching your criteria.</p>}
         </CardContent>
       </Card>
 
@@ -162,7 +167,6 @@ export default function ClearanceApprovalPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Clearance Request Details</DialogTitle>
-            {/* <DialogDescription>Student: {selectedRequest?.studentUserID}</DialogDescription> */}
           </DialogHeader>
           {selectedRequest && (
             <div className="py-4 space-y-3">
@@ -194,3 +198,4 @@ export default function ClearanceApprovalPage() {
     </div>
   );
 }
+

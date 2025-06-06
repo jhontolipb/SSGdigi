@@ -50,8 +50,6 @@ export default function MessagesPage() {
   
   useEffect(() => {
     if (selectedConversationId) {
-      // In a real app, fetch messages for selectedConversationId
-      // For this mock, we use a local 'initialMessages' which will be empty
       setMessages(initialMessages[selectedConversationId] || []);
     } else {
       setMessages([]);
@@ -68,7 +66,7 @@ export default function MessagesPage() {
 
     const message: Message = {
       id: `msg${Date.now()}`,
-      senderId: user.userID, // Changed from user.id to user.userID
+      senderId: user.userID, 
       senderName: user.fullName,
       text: newMessage,
       timestamp: new Date(),
@@ -77,8 +75,6 @@ export default function MessagesPage() {
     
     setMessages(prev => [...prev, message]);
     
-    // In a real app, send message to backend and update conversation list
-    // For this mock, update local state (won't persist across sessions without backend)
     const updatedConversations = conversations.map(c => {
       if (c.id === selectedConversationId) {
         return { ...c, lastMessage: newMessage, timestamp: new Date() };
@@ -87,7 +83,6 @@ export default function MessagesPage() {
     });
     setConversations(updatedConversations);
     
-    // Update mockMessages for this demo (not a real backend)
     if (!initialMessages[selectedConversationId]) {
         initialMessages[selectedConversationId] = [];
     }
@@ -215,3 +210,4 @@ export default function MessagesPage() {
     </div>
   );
 }
+

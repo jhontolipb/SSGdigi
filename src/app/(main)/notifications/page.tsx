@@ -22,7 +22,6 @@ export default function NotificationsPage() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // In a real app, fetch notifications
     setNotifications(initialNotificationsData);
     setMounted(true);
   }, []);
@@ -85,3 +84,4 @@ export default function NotificationsPage() {
     </div>
   );
 }
+

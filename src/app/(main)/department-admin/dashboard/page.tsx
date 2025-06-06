@@ -3,13 +3,15 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
 import Link from "next/link";
+import { useAuth, PredefinedDepartments } from '@/contexts/AuthContext';
+import { useEffect, useState } from 'react';
 
-const deptAdminStats = {
-  departmentStudents: 0,
-  activeEvents: 0,
-  pendingClearances: 0,
-  recentMessages: 0,
-};
+interface DeptAdminStats {
+  departmentStudents: number;
+  activeEvents: number;
+  pendingClearances: number;
+  recentMessages: number;
+}
 
 const quickLinks = [
   { href: '/department-admin/students', label: 'Manage Students', icon: Users },
@@ -20,7 +22,34 @@ const quickLinks = [
 
 
 export default function DepartmentAdminDashboardPage() {
-  const departmentName = "Department"; 
+  const { user, allUsers, allEvents } = useAuth();
+  const [deptAdminStats, setDeptAdminStats] = useState<DeptAdminStats>({
+    departmentStudents: 0,
+    activeEvents: 0,
+    pendingClearances: 0,
+    recentMessages: 0,
+  });
+  const [departmentName, setDepartmentName] = useState("Department");
+
+  useEffect(() => {
+    if (user && user.role === 'department_admin' && user.departmentID) {
+      const deptDetails = PredefinedDepartments.find(d => d.id === user.departmentID);
+      if (deptDetails) {
+        setDepartmentName(deptDetails.name);
+      }
+
+      const studentsCount = allUsers.filter(u => u.role === 'student' && u.departmentID === user.departmentID).length;
+      const eventsCount = allEvents.filter(e => e.organizerType === 'department' && e.organizerId === user.departmentID).length;
+      // Placeholder for pending clearances and messages
+      setDeptAdminStats({
+        departmentStudents: studentsCount,
+        activeEvents: eventsCount,
+        pendingClearances: 0,
+        recentMessages: 0,
+      });
+    }
+  }, [user, allUsers, allEvents]);
+
 
   return (
     <div className="space-y-6">
@@ -91,3 +120,4 @@ export default function DepartmentAdminDashboardPage() {
     </div>
   );
 }
+

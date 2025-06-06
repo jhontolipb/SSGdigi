@@ -3,13 +3,15 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
 import Link from "next/link";
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useEffect, useState } from 'react'; // Import useEffect and useState
 
-const clubAdminStats = {
-  clubMembers: 0,
-  activeEvents: 0,
-  pendingClearances: 0,
-  recentMessages: 0,
-};
+interface ClubAdminStats {
+  clubMembers: number;
+  activeEvents: number;
+  pendingClearances: number;
+  recentMessages: number;
+}
 
 const quickLinks = [
   { href: '/club-admin/members', label: 'Manage Members', icon: Users },
@@ -20,7 +22,38 @@ const quickLinks = [
 
 
 export default function ClubAdminDashboardPage() {
-  const clubName = "Club"; 
+  const { user, allUsers, allEvents } = useAuth(); // Get user, allUsers, and allEvents
+  const [clubAdminStats, setClubAdminStats] = useState<ClubAdminStats>({
+    clubMembers: 0,
+    activeEvents: 0,
+    pendingClearances: 0,
+    recentMessages: 0,
+  });
+  const [clubName, setClubName] = useState("Club");
+
+  useEffect(() => {
+    if (user && user.role === 'club_admin' && user.clubID) {
+      const currentClub = allUsers.find(u => u.userID === user.userID)?.clubID; // or fetch club details
+      const clubDetails = allClubs.find(c => c.id === currentClub);
+      if (clubDetails) {
+        setClubName(clubDetails.name);
+      }
+
+      const membersCount = allUsers.filter(u => u.role === 'student' && u.clubID === user.clubID).length;
+      const eventsCount = allEvents.filter(e => e.organizerType === 'club' && e.organizerId === user.clubID).length;
+      // Placeholder for pending clearances and messages, as these are not yet implemented
+      // const pendingClearancesCount = ...
+      // const recentMessagesCount = ...
+
+      setClubAdminStats({
+        clubMembers: membersCount,
+        activeEvents: eventsCount,
+        pendingClearances: 0, // Replace with actual count when implemented
+        recentMessages: 0,    // Replace with actual count when implemented
+      });
+    }
+  }, [user, allUsers, allEvents, allClubs]);
+
 
   return (
     <div className="space-y-6">
@@ -91,3 +124,7 @@ export default function ClubAdminDashboardPage() {
     </div>
   );
 }
+
+// Ensure allClubs is defined or imported if used directly like this.
+// For this specific fix, I'll rely on it being available from AuthContext.
+import { allClubs } from '@/contexts/AuthContext';

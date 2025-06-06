@@ -1,14 +1,14 @@
 
 "use client";
 
-import { useState, useEffect } from 'react'; // Added useEffect
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileText, CheckCircle, XCircle, Clock, Download, PlusCircle, AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label"; // Keep Label import
-import { useAuth } from '@/contexts/AuthContext'; // For student data
+import { Label } from "@/components/ui/label";
+import { useAuth } from '@/contexts/AuthContext';
 
 type ApprovalStageStatus = 'pending' | 'approved' | 'rejected' | 'not_started';
 
@@ -29,12 +29,10 @@ export default function StudentClearancePage() {
   const [clearanceStatus, setClearanceStatus] = useState<ClearanceStatus | null>(initialClearanceStatus);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Simulate fetching clearance status or setting initial state
   useEffect(() => {
     if (user && user.role === 'student') {
       // In a real app, fetch this from a backend based on user.userID
-      // For now, we'll set a default "Not Requested" state or a mock initiated one.
-      // Let's assume it starts as null (not requested).
+      // For now, it starts as null (not requested).
       setClearanceStatus(null); 
     }
   }, [user]);
@@ -52,10 +50,10 @@ export default function StudentClearancePage() {
         department: { name: studentDepartment?.name || 'N/A', status: 'pending' },
         ssg: { status: 'not_started' },
         overallStatus: 'Pending',
-        sanctionsFlagged: false, // Default to no sanctions initially
+        sanctionsFlagged: false, 
       });
       setIsLoading(false);
-    }, 1000);
+    }, 500); // Reduced delay for quicker UI response
   };
   
   const getStatusIconAndColor = (status: ApprovalStageStatus) => {
@@ -70,7 +68,7 @@ export default function StudentClearancePage() {
   const calculateProgress = () => {
     if (!clearanceStatus) return 0;
     let completedSteps = 0;
-    let totalApplicableSteps = 1; // SSG is always applicable
+    let totalApplicableSteps = 1; 
 
     if (clearanceStatus.club.status !== 'not_started') totalApplicableSteps++;
     if (clearanceStatus.department.status !== 'not_started') totalApplicableSteps++;
@@ -162,7 +160,7 @@ export default function StudentClearancePage() {
                 </div>
               ) : (
                  <p className="text-center text-muted-foreground mt-6">
-                    Overall Status: <Badge variant={clearanceStatus.overallStatus === 'Pending' ? 'secondary' : clearanceStatus.overallStatus === 'Action Required' ? 'destructive' : 'default'} className="text-sm">{clearanceStatus.overallStatus}</Badge>
+                    Overall Status: <Badge variant={clearanceStatus.overallStatus === 'Pending' ? 'secondary' : clearanceStatus.overallStatus === 'Action Required' || clearanceStatus.overallStatus === 'Rejected' ? 'destructive' : 'default'} className="text-sm">{clearanceStatus.overallStatus}</Badge>
                  </p>
               )}
             </div>
@@ -172,3 +170,4 @@ export default function StudentClearancePage() {
     </div>
   );
 }
+

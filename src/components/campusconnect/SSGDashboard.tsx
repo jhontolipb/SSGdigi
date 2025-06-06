@@ -2,17 +2,19 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity, Icon } from 'lucide-react'; // Added Icon
+import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity, Icon } from 'lucide-react';
 import Link from "next/link";
 import Image from "next/image";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Added Avatar for fallback
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffect, useState } from 'react';
 
-const ssgStats = {
-  totalStudents: 0,
-  activeEvents: 0,
-  pendingClearances: 0,
-  recentMessages: 0,
-};
+interface SSGStats {
+  totalStudents: number;
+  activeEvents: number;
+  pendingClearances: number;
+  recentMessages: number;
+}
 
 const quickLinks = [
   { href: '/ssg/users', label: 'Manage Users', icon: Users },
@@ -21,12 +23,30 @@ const quickLinks = [
   { href: '/messages', label: 'View Messages', icon: MessageSquare },
 ];
 
-const recentActivity: { id: number; description: string; time: string; icon?: React.ElementType }[] = [
-    // No mock activity
-];
+const recentActivity: { id: number; description: string; time: string; icon?: React.ElementType }[] = [];
 
 
 export function SSGDashboard() {
+  const { allUsers, allEvents } = useAuth();
+  const [ssgStats, setSsgStats] = useState<SSGStats>({
+    totalStudents: 0,
+    activeEvents: 0,
+    pendingClearances: 0,
+    recentMessages: 0,
+  });
+
+  useEffect(() => {
+    const studentsCount = allUsers.filter(u => u.role === 'student').length;
+    const eventsCount = allEvents.length; 
+    // Placeholder for pending clearances and messages
+    setSsgStats({
+      totalStudents: studentsCount,
+      activeEvents: eventsCount,
+      pendingClearances: 0, 
+      recentMessages: 0, 
+    });
+  }, [allUsers, allEvents]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">SSG Admin Dashboard</h1>
@@ -39,7 +59,6 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.totalStudents}</div>
-            {/* <p className="text-xs text-muted-foreground">+0 since last week</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -49,7 +68,6 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.activeEvents}</div>
-            {/* <p className="text-xs text-muted-foreground">0 upcoming this week</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -59,7 +77,6 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.pendingClearances}</div>
-            {/* <p className="text-xs text-muted-foreground">Needs attention</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -69,7 +86,6 @@ export function SSGDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{ssgStats.recentMessages}</div>
-            {/* <p className="text-xs text-muted-foreground">Unread</p> */}
           </CardContent>
         </Card>
       </div>
@@ -130,3 +146,4 @@ export function SSGDashboard() {
     </div>
   );
 }
+
