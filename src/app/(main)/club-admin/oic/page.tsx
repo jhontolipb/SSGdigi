@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -42,11 +42,12 @@ export default function ClubOICManagementPage() {
       const assigned = allUsers.filter(u => u.role === 'oic' && u.assignedClubId === clubId);
       setClubOics(assigned);
       
-      // OICs available for assignment: role is 'oic' AND ( (no assignedClubId AND no departmentID) OR (no assignedClubId AND department matches club's dept if any) )
-      // This logic can be complex depending on how "available" is defined.
-      // Simpler: OICs with no assignedClubId.
+      // OICs available for assignment: role is 'oic' AND no assignedClubId
       const available = allUsers.filter(u => u.role === 'oic' && !u.assignedClubId && u.userID !== clubAdminUser?.userID);
       setAvailableOicsToAssign(available);
+    } else {
+      setClubOics([]);
+      setAvailableOicsToAssign([]);
     }
   }, [allUsers, clubId, clubAdminUser?.userID]);
 
@@ -65,7 +66,7 @@ export default function ClubOICManagementPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmitForm = () => { // For creating/editing OIC
+  const handleSubmitForm = () => { 
     if (!formData.fullName || !formData.email) {
       toast({ title: "Error", description: "Full name and email are required.", variant: "destructive" });
       return;
@@ -81,19 +82,19 @@ export default function ClubOICManagementPage() {
         fullName: formData.fullName!,
         email: formData.email!,
         password: formData.password ? formData.password : editingUser.password,
-        assignedClubId: clubId, // Ensure it's still assigned to this club
+        assignedClubId: clubId, 
         role: 'oic',
       };
       updateUser(userToUpdate);
       toast({ title: "Success", description: "OIC updated successfully." });
-    } else { // Creating new OIC
+    } else { 
       const newUser: UserProfile = {
         userID: `user${Date.now()}`,
         fullName: formData.fullName!,
         email: formData.email!,
         password: formData.password || defaultOICPassword,
         role: 'oic',
-        assignedClubId: clubId, // Assign to current admin's club
+        assignedClubId: clubId, 
       };
       addUser(newUser);
       toast({ title: "Success", description: "New OIC created and assigned to your club." });
@@ -109,7 +110,7 @@ export default function ClubOICManagementPage() {
         fullName: user.fullName, 
         email: user.email, 
         role: 'oic', 
-        password: '' // Don't prefill password for edit
+        password: '' 
     });
     setIsFormOpen(true);
   };
@@ -247,7 +248,6 @@ export default function ClubOICManagementPage() {
         </CardContent>
       </Card>
 
-      {/* Dialog for Creating/Editing OIC */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -265,7 +265,7 @@ export default function ClubOICManagementPage() {
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleFormChange} />
             </div>
-            {!editingUser && ( // Only show password field when creating new
+            {!editingUser && ( 
                 <div>
                 <Label htmlFor="password">Password</Label>
                 <Input 
@@ -279,7 +279,7 @@ export default function ClubOICManagementPage() {
                 <p className="text-xs text-muted-foreground mt-1">Default is '{defaultOICPassword}' if left blank.</p>
                 </div>
             )}
-             {editingUser && ( // Password change for existing user
+             {editingUser && ( 
                 <div>
                 <Label htmlFor="password">New Password (Optional)</Label>
                 <Input 
@@ -302,12 +302,11 @@ export default function ClubOICManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog for Assigning Existing OIC */}
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>Assign Existing OIC to Your Club</DialogTitle>
-                <DialogDescription>Select an available OIC to assign to your club.</DialogDescription>
+                <DialogDescription>Select an available OIC to assign to your club. Only OICs not currently assigned to any club are listed.</DialogDescription>
             </DialogHeader>
             <div className="py-4">
                 <Label htmlFor="oicSelect">Available OICs</Label>
@@ -337,3 +336,4 @@ export default function ClubOICManagementPage() {
     </div>
   );
 }
+

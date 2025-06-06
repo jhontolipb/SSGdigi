@@ -55,7 +55,7 @@ export default function SSGOICManagementPage() {
   };
   
   const handleSelectChange = (name: string, value: string) => {
-     const val = value === "none" ? undefined : value;
+     const val = value === "none" || value === "" ? undefined : value;
      setFormData(prev => ({ ...prev, [name]: val }));
   }
 
@@ -69,18 +69,22 @@ export default function SSGOICManagementPage() {
         ...editingUser, 
         ...formData, 
         password: formData.password ? formData.password : editingUser.password,
-        role: 'oic', // Ensure role is OIC
+        departmentID: formData.departmentID || undefined,
+        assignedClubId: formData.assignedClubId || undefined,
+        role: 'oic', 
       };
       updateUser(userToUpdate);
       toast({ title: "Success", description: "OIC updated successfully." });
     } else {
-      if (!formData.password) { // Password required for new user
+      if (!formData.password) { 
         formData.password = defaultOICPassword; 
       }
       const newUser: UserProfile = {
         userID: `user${Date.now()}`,
         ...formData,
-        role: 'oic', // Ensure role is OIC
+        departmentID: formData.departmentID || undefined,
+        assignedClubId: formData.assignedClubId || undefined,
+        role: 'oic', 
       } as UserProfile;
       addUser(newUser);
       toast({ title: "Success", description: "OIC created successfully." });
@@ -98,7 +102,7 @@ export default function SSGOICManagementPage() {
         role: 'oic', 
         departmentID: user.departmentID || undefined, 
         assignedClubId: user.assignedClubId || undefined, 
-        password: '' // Don't prefill password for edit
+        password: '' 
     });
     setIsFormOpen(true);
   };
@@ -259,3 +263,4 @@ export default function SSGOICManagementPage() {
     </div>
   );
 }
+

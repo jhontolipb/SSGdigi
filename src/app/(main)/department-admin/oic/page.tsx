@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -42,8 +42,12 @@ export default function DepartmentOICManagementPage() {
       const assigned = allUsers.filter(u => u.role === 'oic' && u.departmentID === departmentId);
       setDepartmentOics(assigned);
       
+      // OICs available for assignment: role is 'oic' AND no departmentID
       const available = allUsers.filter(u => u.role === 'oic' && !u.departmentID && u.userID !== deptAdminUser?.userID);
       setAvailableOicsToAssign(available);
+    } else {
+      setDepartmentOics([]);
+      setAvailableOicsToAssign([]);
     }
   }, [allUsers, departmentId, deptAdminUser?.userID]);
 
@@ -62,7 +66,7 @@ export default function DepartmentOICManagementPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmitForm = () => { // For creating/editing OIC
+  const handleSubmitForm = () => { 
     if (!formData.fullName || !formData.email) {
       toast({ title: "Error", description: "Full name and email are required.", variant: "destructive" });
       return;
@@ -78,19 +82,19 @@ export default function DepartmentOICManagementPage() {
         fullName: formData.fullName!,
         email: formData.email!,
         password: formData.password ? formData.password : editingUser.password,
-        departmentID: departmentId, // Ensure it's still assigned to this department
+        departmentID: departmentId, 
         role: 'oic',
       };
       updateUser(userToUpdate);
       toast({ title: "Success", description: "OIC updated successfully." });
-    } else { // Creating new OIC
+    } else { 
       const newUser: UserProfile = {
         userID: `user${Date.now()}`,
         fullName: formData.fullName!,
         email: formData.email!,
         password: formData.password || defaultOICPassword,
         role: 'oic',
-        departmentID: departmentId, // Assign to current admin's department
+        departmentID: departmentId, 
       };
       addUser(newUser);
       toast({ title: "Success", description: "New OIC created and assigned to your department." });
@@ -106,7 +110,7 @@ export default function DepartmentOICManagementPage() {
         fullName: user.fullName, 
         email: user.email, 
         role: 'oic', 
-        password: '' // Don't prefill password
+        password: '' 
     });
     setIsFormOpen(true);
   };
@@ -243,7 +247,6 @@ export default function DepartmentOICManagementPage() {
         </CardContent>
       </Card>
 
-      {/* Dialog for Creating/Editing OIC */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -298,12 +301,11 @@ export default function DepartmentOICManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog for Assigning Existing OIC */}
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
         <DialogContent className="sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>Assign Existing OIC to Your Department</DialogTitle>
-                <DialogDescription>Select an available OIC to assign to your department.</DialogDescription>
+                <DialogDescription>Select an available OIC to assign to your department. Only OICs not currently assigned to any department are listed.</DialogDescription>
             </DialogHeader>
             <div className="py-4">
                 <Label htmlFor="oicSelectDept">Available OICs</Label>
@@ -317,7 +319,7 @@ export default function DepartmentOICManagementPage() {
                                 {oic.fullName} ({oic.email})
                             </SelectItem>
                         )) : (
-                            <SelectItem value="no-oics-dept" disabled>No OICs available for assignment.</SelectItem>
+                            <SelectItem value="no-oics-dept" disabled>No unassigned OICs available.</SelectItem>
                         )}
                     </SelectContent>
                 </Select>
@@ -333,3 +335,4 @@ export default function DepartmentOICManagementPage() {
     </div>
   );
 }
+
