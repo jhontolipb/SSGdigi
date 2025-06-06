@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ClipboardCheck, Users, CalendarDays, Percent, Download } from "lucide-react";
+import { ClipboardCheck, Users, CalendarDays, Percent, Download, Check } from "lucide-react";
 import type { Event } from '@/types/user';
 
 // Mock Data
