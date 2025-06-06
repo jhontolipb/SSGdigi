@@ -47,15 +47,11 @@ export default function MessagesPage() {
 
   // Listener for messages in the selected conversation
   useEffect(() => {
-    let unsubscribe = () => {};
-    if (selectedConversationId) {
-      unsubscribe = listenForMessages(selectedConversationId);
-    } else {
-      setCurrentMessagesList([]); // Clear messages if no conversation selected
-    }
+    // listenForMessages will internally handle clearing messages if selectedConversationId is null
+    const unsubscribe = listenForMessages(selectedConversationId); 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversationId, listenForMessages]); // setCurrentMessagesList is stable
+  }, [selectedConversationId, listenForMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -96,7 +96,7 @@ interface AuthContextType {
   selectedConversationId: string | null;
   setSelectedConversationId: (conversationId: string | null) => void;
   listenForUserConversations: (userId: string) => () => void; // Returns unsubscribe function
-  listenForMessages: (conversationId: string) => () => void; // Returns unsubscribe function
+  listenForMessages: (conversationId: string | null) => () => void; // Returns unsubscribe function // MODIFIED
   sendMessageToConversation: (conversationId: string, messageText: string) => Promise<void>;
   findOrCreateDirectConversation: (targetUserId: string) => Promise<string | null>; // Returns conversationId
 }
@@ -267,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
 
-      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole, departmentID: string, qrCodeID: string, points: number } = {
+      const dataForFirestore: Partial<UserProfile> = {
         userID: firebaseUser.uid,
         email,
         fullName,
@@ -276,10 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4),
         points: 0,
       };
-      // Remove undefined fields before sending to Firestore
-      Object.keys(dataForFirestore).forEach(key => (dataForFirestore as any)[key] === undefined && delete (dataForFirestore as any)[key]);
-
-
+      
       await setDoc(doc(db, 'users', firebaseUser.uid), dataForFirestore);
       toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
       await fetchUsers();
@@ -307,7 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentMessagesList([]);
       setSelectedConversationId(null);
       router.push('/login');
-    } catch (error: any) { // Added opening brace for catch block
+    } catch (error: any) {
       console.error("Logout error", error);
       toast({ title: "Logout Error", description: error.message || "Could not log out.", variant: "destructive" });
     } finally {
@@ -327,7 +324,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if ('assignedClubId' in safeUpdates) finalUpdates.assignedClubId = safeUpdates.assignedClubId && safeUpdates.assignedClubId.trim() !== "" ? safeUpdates.assignedClubId : undefined;
 
       // Remove undefined fields before sending to Firestore
-      Object.keys(finalUpdates).forEach(key => (finalUpdates as any)[key] === undefined && delete (finalUpdates as any)[key]);
+      Object.keys(finalUpdates).forEach(key => {
+        if ((finalUpdates as any)[key] === undefined) {
+          delete (finalUpdates as any)[key];
+        }
+      });
 
 
       await updateDoc(userDocRef, finalUpdates);
@@ -355,16 +356,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let createdAuthUserUid: string | null = null;
-    const currentAuthUser = auth.currentUser;
-    const adminEmail = user?.email;
-    const adminPasswordAttempt = user?.password; // This will be undefined; admin password isn't stored in context
-
-
+    const currentAuthUser = auth.currentUser; // Store current auth user
+    
     try {
+      // Temporarily sign out admin if logged in to prevent auth state issues with createUser
+      // This is a common pattern if admin creates users. The admin will re-login or their session will be restored.
+      // However, Firebase SDK often handles this gracefully if you use a dedicated admin SDK on backend.
+      // For client-side, this can be tricky. Let's assume admin will be re-authenticated by onAuthStateChanged.
+      // A better approach for user creation by admin would be via Firebase Functions to avoid client-side auth juggling.
+
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
       createdAuthUserUid = tempUserCredential.user.uid;
 
-      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole } = {
+      const dataForFirestore: Partial<UserProfile> = {
         userID: createdAuthUserUid,
         email: newUserProfileData.email,
         fullName: newUserProfileData.fullName,
@@ -386,17 +390,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataForFirestore.points = 0;
       }
       
-      // Remove undefined fields before sending to Firestore
-      Object.keys(dataForFirestore).forEach(key => (dataForFirestore as any)[key] === undefined && delete (dataForFirestore as any)[key]);
-
+      // Ensure no undefined fields are sent to Firestore
+      Object.keys(dataForFirestore).forEach(keyStr => {
+        const key = keyStr as keyof typeof dataForFirestore;
+        if (dataForFirestore[key] === undefined) {
+          delete dataForFirestore[key];
+        }
+      });
 
       await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
 
-      if (currentAuthUser && adminEmail) { // Re-auth only if admin was logged in. Password is not available here directly.
-        await signOut(auth); // Sign out the newly created user
-        // The admin will be redirected to login if their session was interrupted.
-        // Re-authenticating the admin here without prompting for password is not secure/feasible.
-        console.warn("Admin session might have been interrupted. Admin may need to log in again.");
+      // If an admin was signed in, re-sign them in. This is complex client-side.
+      // It's simpler to prompt admin to re-login or assume onAuthStateChanged handles it.
+      // For now, we assume the onAuthStateChanged will re-establish the admin's session if they were signed in before.
+      // If currentAuthUser existed and is different from the new user, Firebase might sign out the new user automatically
+      // and restore the admin. If not, admin needs to re-login.
+      if (currentAuthUser && currentAuthUser.uid !== createdAuthUserUid) {
+        // This part is tricky on client side. It's better to have admin create users via a Cloud Function.
+        // For now, we'll sign out the newly created user, assuming the admin's session will be restored by onAuthStateChanged.
+        await signOut(auth); 
+        // Attempt to re-sign in admin (requires admin credentials, not ideal)
+        // This flow is problematic. Best: admin creates users via backend function.
+        // Second best: Admin will be logged out and need to log back in.
+         if (auth.currentUser?.uid !== currentAuthUser.uid) {
+            console.warn("Admin session might have been interrupted during user creation. Admin may need to log in again.");
+            // Potentially trigger a re-login for the admin, or rely on onAuthStateChanged
+         }
       }
 
 
@@ -409,8 +428,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
-      if (!auth.currentUser && currentAuthUser && adminEmail ) { 
-         console.warn("Admin session might have been interrupted. Admin may need to log in again.");
+       // If admin was signed in and an error occurred, attempt to restore admin session
+      if (currentAuthUser && auth.currentUser?.uid !== currentAuthUser.uid) {
+          console.warn("Admin session might have been interrupted. Admin may need to log in again.");
+          // This part is complex. Simplest is admin relogs.
       }
       return null;
     }
@@ -504,17 +525,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (clubData.description && clubData.description.trim() !== "") {
         dataToSave.description = clubData.description;
       } else {
-        dataToSave.description = undefined; // Explicitly undefined for Firestore
+        delete dataToSave.description; // Ensure field is omitted if empty
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToSave.departmentId = clubData.departmentId;
       } else {
-        dataToSave.departmentId = undefined; // Explicitly undefined
+        delete dataToSave.departmentId; // Ensure field is omitted if empty
       }
-      // Remove undefined fields before sending to Firestore
-      Object.keys(dataToSave).forEach(key => (dataToSave as any)[key] === undefined && delete (dataToSave as any)[key]);
-
-
+      
       const docRef = await addDoc(clubColRef, dataToSave);
       await fetchClubs();
       toast({ title: "Club Added", description: `${clubData.name} created successfully.`});
@@ -533,16 +551,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (clubData.description && clubData.description.trim() !== "") {
         dataToUpdate.description = clubData.description;
       } else {
-        dataToUpdate.description = undefined; // Explicitly undefined
+        dataToUpdate.description = undefined; 
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToUpdate.departmentId = clubData.departmentId;
       } else {
-        dataToUpdate.departmentId = undefined; // Explicitly undefined
+        dataToUpdate.departmentId = undefined; 
       }
 
       // Remove undefined fields before sending to Firestore
-      Object.keys(dataToUpdate).forEach(key => (dataToUpdate as any)[key] === undefined && delete (dataToUpdate as any)[key]);
+      Object.keys(dataToUpdate).forEach(key => {
+        if ((dataToUpdate as any)[key] === undefined) {
+          delete (dataToUpdate as any)[key];
+        }
+      });
 
       await updateDoc(clubDocRef, dataToUpdate);
       await fetchClubs();
@@ -581,10 +603,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addEventToFirestore = async (eventData: Omit<Event, 'id'>): Promise<string | null> => {
     try {
       const eventColRef = collection(db, "events");
-      // Remove undefined fields before sending to Firestore
-      Object.keys(eventData).forEach(key => (eventData as any)[key] === undefined && delete (eventData as any)[key]);
+      const dataToSave = { ...eventData };
+      Object.keys(dataToSave).forEach(key => (dataToSave as any)[key] === undefined && delete (dataToSave as any)[key]);
 
-      const docRef = await addDoc(eventColRef, eventData);
+      const docRef = await addDoc(eventColRef, dataToSave);
       await fetchEvents();
       toast({ title: "Event Added", description: `${eventData.name} created successfully.`});
       return docRef.id;
@@ -598,10 +620,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateEventInFirestore = async (eventId: string, eventData: Omit<Event, 'id'>) => {
     try {
       const eventDocRef = doc(db, "events", eventId);
-      // Remove undefined fields before sending to Firestore
-      Object.keys(eventData).forEach(key => (eventData as any)[key] === undefined && delete (eventData as any)[key]);
+      const dataToUpdate = { ...eventData };
+      Object.keys(dataToUpdate).forEach(key => (dataToUpdate as any)[key] === undefined && delete (dataToUpdate as any)[key]);
 
-      await updateDoc(eventDocRef, eventData);
+      await updateDoc(eventDocRef, dataToUpdate);
       await fetchEvents();
       toast({ title: "Event Updated", description: `${eventData.name} updated successfully.`});
     } catch (error: any) {
@@ -673,10 +695,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const attendanceColRef = collection(db, "attendanceRecords");
       const fullRecordData = {
         ...recordData,
-        scannedByOICUserID: user.userID, // Ensure OIC ID is set
+        scannedByOICUserID: user.userID, 
         timestamp: serverTimestamp()
       };
-      // Remove undefined fields before sending to Firestore
       Object.keys(fullRecordData).forEach(key => (fullRecordData as any)[key] === undefined && delete (fullRecordData as any)[key]);
 
       const docRef = await addDoc(attendanceColRef, fullRecordData);
@@ -699,7 +720,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...updates,
         timestamp: serverTimestamp()
       };
-       // Remove undefined fields before sending to Firestore
       Object.keys(updatesWithTimestamp).forEach(key => (updatesWithTimestamp as any)[key] === undefined && delete (updatesWithTimestamp as any)[key]);
 
       await updateDoc(attendanceDocRef, updatesWithTimestamp);
@@ -767,13 +787,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ssgStatus: 'pending',
       overallStatus: 'Pending',
     };
-    // Remove undefined fields
-    Object.keys(newRequestData).forEach(key => (newRequestData as any)[key] === undefined && delete (newRequestData as any)[key]);
+    
+    const cleanRequestData = { ...newRequestData };
+    Object.keys(cleanRequestData).forEach(key => (cleanRequestData as any)[key] === undefined && delete (cleanRequestData as any)[key]);
 
 
     try {
-      const docRef = await addDoc(collection(db, "clearanceRequests"), newRequestData);
-      setStudentClearanceRequest({ ...newRequestData, id: docRef.id, requestedDate: new Date() } as ClearanceRequest); // Optimistic update
+      const docRef = await addDoc(collection(db, "clearanceRequests"), cleanRequestData);
+      setStudentClearanceRequest({ ...cleanRequestData, id: docRef.id, requestedDate: new Date() } as ClearanceRequest); 
       toast({ title: "Success", description: "Clearance request initiated." });
     } catch (error: any) {
       console.error("Error initiating clearance request:", error);
@@ -849,7 +870,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let overall: ClearanceRequest['overallStatus'] = 'Pending';
         if (status === 'rejected') {
             overall = 'Rejected';
-             // If any stage rejects, SSG is also marked as rejected if it was pending
             if (tempUpdatedRequest.ssgStatus === 'pending' || stage === 'ssg') {
                  updates.ssgStatus = 'rejected';
                  if (stage !== 'ssg') updates.ssgApprovalNotes = `Auto-rejected due to ${stage} rejection.`;
@@ -866,12 +886,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         updates.overallStatus = overall;
     }
-     // Remove undefined fields
-    Object.keys(updates).forEach(key => (updates as any)[key] === undefined && delete (updates as any)[key]);
+    
+    const cleanUpdates = { ...updates };
+    Object.keys(cleanUpdates).forEach(key => (cleanUpdates as any)[key] === undefined && delete (cleanUpdates as any)[key]);
 
 
     try {
-        await updateDoc(clearanceDocRef, updates as DocumentData);
+        await updateDoc(clearanceDocRef, cleanUpdates as DocumentData);
         toast({ title: "Success", description: `Clearance request ${stage} stage updated to ${status}.` });
         if (user.role === 'student') {
             await fetchStudentClearanceRequest(user.userID);
@@ -919,9 +940,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [toast]);
 
-  const listenForMessages = useCallback((conversationId: string) => {
+  const listenForMessages = useCallback((conversationId: string | null) => { // MODIFIED to accept null
     if (!conversationId) {
-      setCurrentMessagesList([]);
+      setCurrentMessagesList([]); // Clear messages if conversationId is null
       return () => {}; // Return an empty unsubscribe function
     }
     const messagesColRef = collection(db, "conversations", conversationId, "messages");
@@ -981,23 +1002,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const participantUIDs = [user.userID, targetUserId].sort(); // Sort to ensure consistent query
+    const participantUIDs = [user.userID, targetUserId].sort(); 
 
     const q = query(
       collection(db, "conversations"),
       where("type", "==", "direct"),
-      where("participantUIDs", "==", participantUIDs) // Exact match on sorted array
+      where("participantUIDs", "==", participantUIDs) 
     );
 
     try {
       const querySnapshot = await getDocs(q);
       if (!querySnapshot.empty) {
-        // Conversation already exists
         const existingConvoId = querySnapshot.docs[0].id;
-        setSelectedConversationId(existingConvoId); // Auto-select it
+        setSelectedConversationId(existingConvoId); 
         return existingConvoId;
       } else {
-        // Create new conversation
         const targetUserDoc = allUsers.find(u => u.userID === targetUserId);
         if (!targetUserDoc) {
             toast({title: "Error", description: "Target user profile not found.", variant: "destructive"});
@@ -1007,18 +1026,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newConversationData: Omit<ConversationFirestore, 'id'> = {
           participantUIDs,
           participantInfo: {
-            [user.userID]: { fullName: user.fullName }, // avatarSeed can be added if available
-            [targetUserId]: { fullName: targetUserDoc.fullName }, // avatarSeed for target user
+            [user.userID]: { fullName: user.fullName }, 
+            [targetUserId]: { fullName: targetUserDoc.fullName }, 
           },
           type: 'direct',
           lastMessageTimestamp: serverTimestamp(),
           createdAt: serverTimestamp(),
         };
-        // Remove undefined fields
-        Object.keys(newConversationData).forEach(key => (newConversationData as any)[key] === undefined && delete (newConversationData as any)[key]);
+        
+        const cleanConversationData = { ...newConversationData };
+        Object.keys(cleanConversationData).forEach(key => (cleanConversationData as any)[key] === undefined && delete (cleanConversationData as any)[key]);
 
-        const docRef = await addDoc(collection(db, "conversations"), newConversationData);
-        setSelectedConversationId(docRef.id); // Auto-select new conversation
+        const docRef = await addDoc(collection(db, "conversations"), cleanConversationData);
+        setSelectedConversationId(docRef.id); 
         return docRef.id;
       }
     } catch (error: any) {
