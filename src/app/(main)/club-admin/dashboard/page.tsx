@@ -22,7 +22,7 @@ const quickLinks = [
 
 
 export default function ClubAdminDashboardPage() {
-  const { user, allUsers, allEvents } = useAuth(); // Get user, allUsers, and allEvents
+  const { user, allUsers, allEvents, allClubs } = useAuth(); // Get user, allUsers, allEvents, and allClubs from useAuth
   const [clubAdminStats, setClubAdminStats] = useState<ClubAdminStats>({
     clubMembers: 0,
     activeEvents: 0,
@@ -33,7 +33,7 @@ export default function ClubAdminDashboardPage() {
 
   useEffect(() => {
     if (user && user.role === 'club_admin' && user.clubID) {
-      const currentClub = allUsers.find(u => u.userID === user.userID)?.clubID; // or fetch club details
+      const currentClub = allUsers.find(u => u.userID === user.userID)?.clubID; 
       const clubDetails = allClubs.find(c => c.id === currentClub);
       if (clubDetails) {
         setClubName(clubDetails.name);
@@ -41,15 +41,12 @@ export default function ClubAdminDashboardPage() {
 
       const membersCount = allUsers.filter(u => u.role === 'student' && u.clubID === user.clubID).length;
       const eventsCount = allEvents.filter(e => e.organizerType === 'club' && e.organizerId === user.clubID).length;
-      // Placeholder for pending clearances and messages, as these are not yet implemented
-      // const pendingClearancesCount = ...
-      // const recentMessagesCount = ...
-
+      
       setClubAdminStats({
         clubMembers: membersCount,
         activeEvents: eventsCount,
-        pendingClearances: 0, // Replace with actual count when implemented
-        recentMessages: 0,    // Replace with actual count when implemented
+        pendingClearances: 0, 
+        recentMessages: 0,    
       });
     }
   }, [user, allUsers, allEvents, allClubs]);
@@ -124,7 +121,3 @@ export default function ClubAdminDashboardPage() {
     </div>
   );
 }
-
-// Ensure allClubs is defined or imported if used directly like this.
-// For this specific fix, I'll rely on it being available from AuthContext.
-import { allClubs } from '@/contexts/AuthContext';
