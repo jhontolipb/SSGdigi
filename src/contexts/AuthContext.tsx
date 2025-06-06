@@ -63,9 +63,7 @@ const initialMockUsers: UserProfile[] = [
   { userID: 'stud005', email: 'bruce.wayne@example.com', fullName: 'Bruce Wayne', role: 'student', departmentID: 'dept_bs_criminology', clubID: 'club_debate', qrCodeID: 'qr_bruce_wayne', points: 50, password: defaultPassword },
 ];
 
-const initialMockEvents: Event[] = [
-    // Initially no mock events, admins will create them
-];
+const initialMockEvents: Event[] = [];
 
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -78,24 +76,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Load current user
     const storedUser = localStorage.getItem('campusConnectUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
-      const canonicalUser = allUsers.find(u => u.userID === parsedUser.userID);
-      if (canonicalUser) {
-        setUser(canonicalUser); 
-      } else if (parsedUser.role === 'student' && parsedUser.qrCodeID) { 
-        setUser(parsedUser);
-        if(!allUsers.find(u => u.userID === parsedUser.userID)) { 
-            setAllUsers(prev => [...prev, parsedUser]);
+      // Ensure the stored user is re-validated against the potentially updated allUsers list later
+      // For now, just set it, but if allUsers changes, this might need re-syncing or a check
+      setUser(parsedUser);
+    }
+
+    // Load all users from localStorage or initialize
+    const storedAllUsers = localStorage.getItem('allMockUsers');
+    if (storedAllUsers) {
+        try {
+            const parsedAllUsers = JSON.parse(storedAllUsers);
+            if (Array.isArray(parsedAllUsers) && parsedAllUsers.every(u => u.userID && u.email && u.fullName && u.role)) { // Basic validation
+                setAllUsers(parsedAllUsers);
+                 // Re-validate current user if it was loaded from localStorage
+                if (storedUser) {
+                    const parsedCurrentUser = JSON.parse(storedUser);
+                    const canonicalUser = parsedAllUsers.find(u => u.userID === parsedCurrentUser.userID);
+                    if (canonicalUser) {
+                        setUser(canonicalUser);
+                    } else { // Current user in storage no longer exists in allUsers
+                        localStorage.removeItem('campusConnectUser');
+                        setUser(null);
+                    }
+                }
+            } else {
+                localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
+                setAllUsers(initialMockUsers);
+            }
+        } catch (e) {
+            console.error("Failed to parse allMockUsers from localStorage", e);
+            localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
+            setAllUsers(initialMockUsers);
         }
-      }
+    } else {
+        localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
+        setAllUsers(initialMockUsers);
     }
     
-    // Load events from localStorage if available (for demo persistence)
+    // Load events from localStorage or initialize
     const storedEvents = localStorage.getItem('campusConnectEvents');
     if (storedEvents) {
-        setAllEvents(JSON.parse(storedEvents));
+        try {
+            const parsedEvents = JSON.parse(storedEvents);
+            if (Array.isArray(parsedEvents)) { // Add more validation if needed
+                setAllEvents(parsedEvents);
+            } else {
+                localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
+                setAllEvents(initialMockEvents);
+            }
+        } catch(e) {
+            console.error("Failed to parse campusConnectEvents from localStorage", e);
+            localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
+            setAllEvents(initialMockEvents);
+        }
+    } else {
+        localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
+        setAllEvents(initialMockEvents);
     }
 
     setLoading(false);
@@ -307,8 +347,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         addUser,
         deleteUser,
         changePassword,
-        allClubs: defaultClubs,
-        allDepartments: defaultDepartments,
+        allClubs: defaultClubs, // These remain static for now, not from localStorage
+        allDepartments: defaultDepartments, // These remain static for now
         allEvents,
         addEvent,
         updateEvent,
@@ -329,3 +369,4 @@ export function useAuth() {
 
 export const PredefinedDepartments = defaultDepartments;
 export const PredefinedClubs = defaultClubs;
+
