@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club, Event } from '@/types/user';
+import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord } from '@/types/user';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,10 @@ import {
   where,
   addDoc,
   writeBatch,
+  Timestamp,
+  serverTimestamp,
+  QuerySnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -63,6 +67,10 @@ interface AuthContextType {
 
   updateUserClub: (userId: string, clubId: string | null) => void;
   addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
+
+  addAttendanceRecord: (recordData: Omit<AttendanceRecord, 'id'>) => Promise<string | null>;
+  updateAttendanceRecord: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
+  findStudentEventAttendance: (studentUserID: string, eventID: string) => Promise<AttendanceRecord | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -255,9 +263,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { userID, password, ...safeUpdates } = updatedProfileData;
 
       const finalUpdates: Partial<UserProfile> = { ...safeUpdates };
+      
+      // Ensure empty strings for optional ID fields become undefined to remove them in Firestore
       if (safeUpdates.clubID === "") finalUpdates.clubID = undefined;
+      else if (safeUpdates.clubID) finalUpdates.clubID = safeUpdates.clubID;
+      else delete finalUpdates.clubID;
+
       if (safeUpdates.departmentID === "") finalUpdates.departmentID = undefined;
+      else if (safeUpdates.departmentID) finalUpdates.departmentID = safeUpdates.departmentID;
+      else delete finalUpdates.departmentID;
+      
       if (safeUpdates.assignedClubId === "") finalUpdates.assignedClubId = undefined;
+      else if (safeUpdates.assignedClubId) finalUpdates.assignedClubId = safeUpdates.assignedClubId;
+      else delete finalUpdates.assignedClubId;
+
 
       await updateDoc(userDocRef, finalUpdates);
       await fetchUsers();
@@ -285,30 +304,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let createdAuthUserUid: string | null = null;
     const currentAuthUser = auth.currentUser;
+    const adminPassword = user?.password; // Assuming the admin's password is stored in the user object for re-auth
 
     try {
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
       createdAuthUserUid = tempUserCredential.user.uid;
 
-      const finalProfileData: Omit<UserProfile, 'password'> = {
-        ...newUserProfileData,
+      // Construct dataForFirestore carefully
+      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole } = {
         userID: createdAuthUserUid,
-        qrCodeID: newUserProfileData.role === 'student' ? 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4) : undefined,
-        points: newUserProfileData.role === 'student' ? 0 : undefined,
-        departmentID: newUserProfileData.departmentID || undefined,
-        clubID: newUserProfileData.clubID || undefined,
-        assignedClubId: newUserProfileData.assignedClubId || undefined,
+        email: newUserProfileData.email,
+        fullName: newUserProfileData.fullName,
+        role: newUserProfileData.role,
       };
-      await setDoc(doc(db, 'users', createdAuthUserUid), finalProfileData);
 
-      if (currentAuthUser && currentAuthUser.email && user?.password) {
-        await signOut(auth);
+      if (newUserProfileData.departmentID && newUserProfileData.departmentID.trim() !== "") {
+        dataForFirestore.departmentID = newUserProfileData.departmentID;
+      }
+      if (newUserProfileData.clubID && newUserProfileData.clubID.trim() !== "") {
+        dataForFirestore.clubID = newUserProfileData.clubID;
+      }
+      if (newUserProfileData.assignedClubId && newUserProfileData.assignedClubId.trim() !== "") {
+        dataForFirestore.assignedClubId = newUserProfileData.assignedClubId;
+      }
+
+      if (newUserProfileData.role === 'student') {
+        dataForFirestore.qrCodeID = 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4);
+        dataForFirestore.points = 0;
+      }
+      // For other roles (admin, oic), qrCodeID and points are intentionally omitted
+      // so they are not written as undefined to Firestore.
+
+      await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
+
+      if (currentAuthUser && currentAuthUser.email && adminPassword) {
+         // Re-authenticate admin to prevent session invalidation
+        await signOut(auth); // Sign out the newly created user
         try {
-            await signInWithEmailAndPassword(auth, currentAuthUser.email, user.password);
+            await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
         } catch (reauthError) {
             console.warn("Admin re-authentication failed after creating user. Admin may need to log in again.", reauthError);
+            // Potentially redirect admin to login if re-auth fails critically
         }
       }
+
 
       await fetchUsers();
       toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
@@ -318,6 +357,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
+      }
+      // Attempt to re-sign in the admin if auth state was lost and they were signed out.
+      if (!auth.currentUser && currentAuthUser && currentAuthUser.email && adminPassword) {
+        try {
+            await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
+        } catch (finalReauthError) {
+            console.warn("Final admin re-authentication attempt failed.", finalReauthError);
+        }
       }
       return null;
     }
@@ -350,6 +397,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reauthenticateWithCredential(firebaseUser, credential);
       await firebaseUpdatePassword(firebaseUser, newPassword);
       toast({ title: "Success", description: "Password updated successfully." });
+      // Update the locally stored password for the admin user if they changed their own password
+      if (user && user.userID === firebaseUser.uid) {
+        setUser(prev => prev ? ({...prev, password: newPassword}) : null);
+      }
       return { success: true, message: "Password updated successfully." };
     } catch (error: any) {
       console.error("Password change error", error);
@@ -430,8 +481,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const clubDocRef = doc(db, "clubs", clubId);
       const dataToUpdate: Partial<Club> = { name: clubData.name };
-      dataToUpdate.description = clubData.description && clubData.description.trim() !== "" ? clubData.description : undefined;
-      dataToUpdate.departmentId = clubData.departmentId && clubData.departmentId.trim() !== "" ? clubData.departmentId : undefined;
+       if (clubData.description && clubData.description.trim() !== "") {
+        dataToUpdate.description = clubData.description;
+      } else {
+        dataToUpdate.description = undefined; // Remove field if empty
+      }
+      if (clubData.departmentId && clubData.departmentId.trim() !== "") {
+        dataToUpdate.departmentId = clubData.departmentId;
+      } else {
+        dataToUpdate.departmentId = undefined; // Remove field if empty
+      }
+
 
       await updateDoc(clubDocRef, dataToUpdate);
       await fetchClubs();
@@ -522,6 +582,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      return { success: false, message: "Failed to add OIC." };
   };
 
+  const addAttendanceRecord = async (recordData: Omit<AttendanceRecord, 'id'>): Promise<string | null> => {
+    try {
+      const attendanceColRef = collection(db, "attendanceRecords");
+      const docRef = await addDoc(attendanceColRef, {
+        ...recordData,
+        timestamp: serverTimestamp() // Add a server timestamp for when the record was created/modified
+      });
+      toast({ title: "Attendance Recorded", description: `Student ${recordData.studentUserID} marked ${recordData.status}.`});
+      return docRef.id;
+    } catch (error: any) {
+      console.error("Error adding attendance record:", error);
+      toast({ title: "Attendance Error", description: (error as Error).message || "Could not record attendance.", variant: "destructive" });
+      return null;
+    }
+  };
+
+  const updateAttendanceRecord = async (recordId: string, updates: Partial<AttendanceRecord>) => {
+    try {
+      const attendanceDocRef = doc(db, "attendanceRecords", recordId);
+      await updateDoc(attendanceDocRef, {
+        ...updates,
+        timestamp: serverTimestamp() // Update timestamp
+      });
+      toast({ title: "Attendance Updated", description: `Record ${recordId} updated.`});
+    } catch (error: any) {
+      console.error("Error updating attendance record:", error);
+      toast({ title: "Attendance Error", description: (error as Error).message || "Could not update attendance.", variant: "destructive" });
+    }
+  };
+
+  const findStudentEventAttendance = async (studentUserID: string, eventID: string): Promise<AttendanceRecord | null> => {
+    try {
+      const q = query(
+        collection(db, "attendanceRecords"),
+        where("studentUserID", "==", studentUserID),
+        where("eventID", "==", eventID)
+      );
+      const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        return { id: docSnap.id, ...docSnap.data() } as AttendanceRecord;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error finding attendance record:", error);
+      toast({ title: "Attendance Error", description: (error as Error).message || "Could not find attendance record.", variant: "destructive" });
+      return null;
+    }
+  };
+
 
   return (
     <AuthContext.Provider value={{
@@ -554,6 +664,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         deleteEventFromFirestore,
         updateUserClub,
         addNewOIC,
+        addAttendanceRecord,
+        updateAttendanceRecord,
+        findStudentEventAttendance,
     }}>
       {children}
     </AuthContext.Provider>
@@ -567,3 +680,4 @@ export function useAuth() {
   }
   return context;
 }
+
