@@ -31,6 +31,7 @@ import {
   serverTimestamp,
   QuerySnapshot,
   DocumentData,
+  orderBy,
 } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -68,6 +69,9 @@ interface AuthContextType {
   updateUserClub: (userId: string, clubId: string | null) => void;
   addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
 
+  // Attendance
+  currentEventAttendance: AttendanceRecord[];
+  fetchAttendanceRecordsForEvent: (eventId: string) => Promise<void>;
   addAttendanceRecord: (recordData: Omit<AttendanceRecord, 'id'>) => Promise<string | null>;
   updateAttendanceRecord: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
   findStudentEventAttendance: (studentUserID: string, eventID: string) => Promise<AttendanceRecord | null>;
@@ -82,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allDepartments, setAllDepartments] = useState<Department[]>([]);
   const [allClubs, setAllClubs] = useState<Club[]>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
+  const [currentEventAttendance, setCurrentEventAttendance] = useState<AttendanceRecord[]>([]);
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -132,7 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchEvents = async () => {
     try {
       const eventsCollectionRef = collection(db, "events");
-      const querySnapshot = await getDocs(eventsCollectionRef);
+      const q = query(eventsCollectionRef, orderBy("date", "desc"));
+      const querySnapshot = await getDocs(q);
       const eventsList = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data()
@@ -219,7 +225,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
-      const newStudentProfile: UserProfile = {
+      
+      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole } = {
         userID: firebaseUser.uid,
         email,
         fullName,
@@ -228,7 +235,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4),
         points: 0,
       };
-      await setDoc(doc(db, 'users', firebaseUser.uid), newStudentProfile);
+
+      await setDoc(doc(db, 'users', firebaseUser.uid), dataForFirestore);
       toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
       await fetchUsers();
     } catch (error: any) {
@@ -248,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAllDepartments([]);
       setAllClubs([]);
       setAllEvents([]);
+      setCurrentEventAttendance([]);
       router.push('/login');
     } catch (error: any) {
       console.error("Logout error", error);
@@ -264,19 +273,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const finalUpdates: Partial<UserProfile> = { ...safeUpdates };
       
-      // Ensure empty strings for optional ID fields become undefined to remove them in Firestore
-      if (safeUpdates.clubID === "") finalUpdates.clubID = undefined;
+      if (safeUpdates.clubID === "" || safeUpdates.clubID === null) finalUpdates.clubID = undefined;
       else if (safeUpdates.clubID) finalUpdates.clubID = safeUpdates.clubID;
       else delete finalUpdates.clubID;
 
-      if (safeUpdates.departmentID === "") finalUpdates.departmentID = undefined;
+      if (safeUpdates.departmentID === "" || safeUpdates.departmentID === null) finalUpdates.departmentID = undefined;
       else if (safeUpdates.departmentID) finalUpdates.departmentID = safeUpdates.departmentID;
       else delete finalUpdates.departmentID;
       
-      if (safeUpdates.assignedClubId === "") finalUpdates.assignedClubId = undefined;
+      if (safeUpdates.assignedClubId === "" || safeUpdates.assignedClubId === null) finalUpdates.assignedClubId = undefined;
       else if (safeUpdates.assignedClubId) finalUpdates.assignedClubId = safeUpdates.assignedClubId;
       else delete finalUpdates.assignedClubId;
-
 
       await updateDoc(userDocRef, finalUpdates);
       await fetchUsers();
@@ -304,13 +311,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let createdAuthUserUid: string | null = null;
     const currentAuthUser = auth.currentUser;
-    const adminPassword = user?.password; // Assuming the admin's password is stored in the user object for re-auth
+    const adminPassword = user?.password; 
 
     try {
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
       createdAuthUserUid = tempUserCredential.user.uid;
 
-      // Construct dataForFirestore carefully
       const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole } = {
         userID: createdAuthUserUid,
         email: newUserProfileData.email,
@@ -332,22 +338,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataForFirestore.qrCodeID = 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4);
         dataForFirestore.points = 0;
       }
-      // For other roles (admin, oic), qrCodeID and points are intentionally omitted
-      // so they are not written as undefined to Firestore.
 
       await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
 
       if (currentAuthUser && currentAuthUser.email && adminPassword) {
-         // Re-authenticate admin to prevent session invalidation
-        await signOut(auth); // Sign out the newly created user
+        await signOut(auth); 
         try {
             await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
         } catch (reauthError) {
             console.warn("Admin re-authentication failed after creating user. Admin may need to log in again.", reauthError);
-            // Potentially redirect admin to login if re-auth fails critically
         }
       }
-
 
       await fetchUsers();
       toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
@@ -358,7 +359,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
-      // Attempt to re-sign in the admin if auth state was lost and they were signed out.
       if (!auth.currentUser && currentAuthUser && currentAuthUser.email && adminPassword) {
         try {
             await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
@@ -397,7 +397,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reauthenticateWithCredential(firebaseUser, credential);
       await firebaseUpdatePassword(firebaseUser, newPassword);
       toast({ title: "Success", description: "Password updated successfully." });
-      // Update the locally stored password for the admin user if they changed their own password
       if (user && user.userID === firebaseUser.uid) {
         setUser(prev => prev ? ({...prev, password: newPassword}) : null);
       }
@@ -484,14 +483,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (clubData.description && clubData.description.trim() !== "") {
         dataToUpdate.description = clubData.description;
       } else {
-        dataToUpdate.description = undefined; // Remove field if empty
+        dataToUpdate.description = undefined; 
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToUpdate.departmentId = clubData.departmentId;
       } else {
-        dataToUpdate.departmentId = undefined; // Remove field if empty
+        dataToUpdate.departmentId = undefined; 
       }
-
 
       await updateDoc(clubDocRef, dataToUpdate);
       await fetchClubs();
@@ -582,14 +580,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      return { success: false, message: "Failed to add OIC." };
   };
 
+  const fetchAttendanceRecordsForEvent = async (eventId: string) => {
+    if (!eventId) {
+      setCurrentEventAttendance([]);
+      return;
+    }
+    try {
+      const attendanceQuery = query(
+        collection(db, "attendanceRecords"),
+        where("eventID", "==", eventId),
+        orderBy("timestamp", "asc") 
+      );
+      const querySnapshot = await getDocs(attendanceQuery);
+      const records = querySnapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      } as AttendanceRecord));
+      setCurrentEventAttendance(records);
+    } catch (error) {
+      console.error("Error fetching attendance records for event:", eventId, error);
+      toast({ title: "Attendance Error", description: (error as Error).message || "Could not fetch attendance records.", variant: "destructive" });
+      setCurrentEventAttendance([]);
+    }
+  };
+
+
   const addAttendanceRecord = async (recordData: Omit<AttendanceRecord, 'id'>): Promise<string | null> => {
     try {
       const attendanceColRef = collection(db, "attendanceRecords");
       const docRef = await addDoc(attendanceColRef, {
         ...recordData,
-        timestamp: serverTimestamp() // Add a server timestamp for when the record was created/modified
+        timestamp: serverTimestamp() 
       });
       toast({ title: "Attendance Recorded", description: `Student ${recordData.studentUserID} marked ${recordData.status}.`});
+      if (recordData.eventID === (allEvents.find(e => e.id === recordData.eventID)?.id)) { // Check if current event matches
+         await fetchAttendanceRecordsForEvent(recordData.eventID);
+      }
       return docRef.id;
     } catch (error: any) {
       console.error("Error adding attendance record:", error);
@@ -603,9 +629,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const attendanceDocRef = doc(db, "attendanceRecords", recordId);
       await updateDoc(attendanceDocRef, {
         ...updates,
-        timestamp: serverTimestamp() // Update timestamp
+        timestamp: serverTimestamp() 
       });
       toast({ title: "Attendance Updated", description: `Record ${recordId} updated.`});
+      if (updates.eventID) { // If eventID is part of updates, refetch for that event
+        await fetchAttendanceRecordsForEvent(updates.eventID);
+      }
     } catch (error: any) {
       console.error("Error updating attendance record:", error);
       toast({ title: "Attendance Error", description: (error as Error).message || "Could not update attendance.", variant: "destructive" });
@@ -664,6 +693,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         deleteEventFromFirestore,
         updateUserClub,
         addNewOIC,
+        currentEventAttendance,
+        fetchAttendanceRecordsForEvent,
         addAttendanceRecord,
         updateAttendanceRecord,
         findStudentEventAttendance,

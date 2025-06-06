@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ClipboardCheck, Users, CalendarDays, Percent, Download, UserPlus, AlertTriangle, CheckCircle2, Check } from "lucide-react";
+import { ClipboardCheck, Users, CalendarDays, Percent, Download, UserPlus, AlertTriangle, CheckCircle2, Check, Loader2 } from "lucide-react";
 import type { Event, AttendanceRecord as AttendanceRecordType, UserProfile } from '@/types/user';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -18,84 +18,82 @@ interface AttendanceSummary {
     present: number;
     absent: number;
     late: number;
-    total: number;
-    attendanceRate: number;
+    totalParticipants: number; // Number of students who have any record (present, late, absent)
+    totalExpected: number; // Total students in the system, or specific target group if defined
+    attendanceRate: number; // Based on present/totalExpected or present/totalParticipants
 }
 
 export default function AttendanceMonitoringPage() {
-  const { allEvents, allUsers, addNewOIC } = useAuth(); 
+  const { allEvents, allUsers, addNewOIC, currentEventAttendance, fetchAttendanceRecordsForEvent, loading: authLoading } = useAuth(); 
   const { toast } = useToast();
 
-  const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecordType[]>([]);
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isDataLoading, setIsDataLoading] = useState(false);
 
   const [isAddOICDialogOpen, setIsAddOICDialogOpen] = useState(false);
   const [newOICFullName, setNewOICFullName] = useState('');
   const [newOICEmail, setNewOICEmail] = useState('');
   const [isAddingOIC, setIsAddingOIC] = useState(false);
 
+  // Auto-select first event if available
   useEffect(() => {
-     const currentEvents = allEvents || [];
-     setEvents(currentEvents);
-     if (currentEvents.length > 0 && !selectedEventId) {
-        setSelectedEventId(currentEvents[0].id);
-     } else if (currentEvents.length === 0) {
-        setSelectedEventId('');
+     if (allEvents.length > 0 && !selectedEventId) {
+        setSelectedEventId(allEvents[0].id);
      }
   }, [allEvents, selectedEventId]);
 
+  // Fetch attendance records when selectedEventId changes
   useEffect(() => {
     if (selectedEventId) {
-      const eventForAttendance = events.find(e => e.id === selectedEventId);
-      let records: AttendanceRecordType[] = []; 
+      setIsDataLoading(true);
+      fetchAttendanceRecordsForEvent(selectedEventId).finally(() => setIsDataLoading(false));
+    } else {
+      setCurrentEventAttendance([]); // Clear records if no event is selected
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEventId]); // Removed fetchAttendanceRecordsForEvent, setCurrentEventAttendance from deps
 
-      // Simulate fetching or filtering records for the selected event
-      // This is a placeholder; actual fetching would be asynchronous.
-      // For demonstration, we can mock some records based on allUsers if needed for testing.
-      // For instance, if you wanted to show something for an event:
-      /*
-      if (eventForAttendance && allUsers.length > 0) {
-        const students = allUsers.filter(u => u.role === 'student');
-        records = students.slice(0, Math.min(5, students.length)).map((student, index) => ({
-            id: `att_${eventForAttendance.id}_${student.userID}`,
-            eventID: eventForAttendance.id,
-            studentUserID: student.userID,
-            timeIn: '09:00 AM',
-            timeOut: index % 2 === 0 ? '05:00 PM' : null,
-            status: index % 3 === 0 ? 'absent' : (index % 3 === 1 ? 'late' : 'present'),
-            scannedByOICUserID: eventForAttendance.oicIds.length > 0 ? eventForAttendance.oicIds[0] : 'oic_unknown'
-        }));
-      }
-      */
+  // Calculate summary when attendance records or users change
+  useEffect(() => {
+    if (selectedEventId && currentEventAttendance) {
+      const presentCount = currentEventAttendance.filter(r => r.status === 'present' || r.status === 'late').length;
+      const absentCount = currentEventAttendance.filter(r => r.status === 'absent').length; // Assuming 'absent' status exists
+      const lateCount = currentEventAttendance.filter(r => r.status === 'late').length;
       
-      const filteredRecords = records.filter(r => {
-          const studentUser = allUsers.find(u=>u.userID === r.studentUserID);
-          return studentUser?.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.studentUserID.toLowerCase().includes(searchTerm.toLowerCase());
-        }
-      );
-      setAttendanceRecords(filteredRecords);
+      // For simplicity, totalExpected is all students. Could be refined based on event target.
+      const totalExpected = allUsers.filter(u => u.role === 'student').length; 
+      const totalParticipants = new Set(currentEventAttendance.map(r => r.studentUserID)).size;
 
-      const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length;
-      const absentCount = records.filter(r => r.status === 'absent').length;
-      const lateCount = records.filter(r => r.status === 'late').length;
-      const totalExpected = allUsers.filter(u=> u.role === 'student').length; 
       const attendanceRateValue = totalExpected > 0 ? (presentCount / totalExpected) * 100 : 0;
       
-      setSummary({ present: presentCount, absent: absentCount, late: lateCount, total: totalExpected, attendanceRate: attendanceRateValue });
-
+      setSummary({ 
+        present: presentCount, 
+        absent: absentCount, 
+        late: lateCount, 
+        totalParticipants: totalParticipants,
+        totalExpected: totalExpected, 
+        attendanceRate: attendanceRateValue 
+      });
     } else {
-      setAttendanceRecords([]);
       setSummary(null);
     }
-  }, [selectedEventId, searchTerm, events, allUsers]);
+  }, [currentEventAttendance, allUsers, selectedEventId]);
 
-  const selectedEvent = events.find(e => e.id === selectedEventId);
+  const selectedEvent = allEvents.find(e => e.id === selectedEventId);
+
+  const filteredAttendanceRecords = currentEventAttendance.filter(r => {
+      const studentUser = allUsers.find(u => u.userID === r.studentUserID);
+      return studentUser?.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+             (studentUser?.email && studentUser.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+             r.studentUserID.toLowerCase().includes(searchTerm.toLowerCase());
+    }
+  );
 
   const handleAddOICSubmit = async () => {
-    if (!newOICFullName.trim() || !newOICEmail.trim()) {
+    // ... (keep existing OIC submission logic)
+     if (!newOICFullName.trim() || !newOICEmail.trim()) {
       toast({
         title: "Validation Error",
         description: "Full name and email are required for the new OIC.",
@@ -120,8 +118,7 @@ export default function AttendanceMonitoringPage() {
       toast({
         title: "OIC Added",
         description: result.message,
-        variant: "default",
-        action: <CheckCircle2 />
+        action: <CheckCircle2 className="text-green-500"/>
       });
       setNewOICFullName('');
       setNewOICEmail('');
@@ -131,7 +128,7 @@ export default function AttendanceMonitoringPage() {
         title: "Error Adding OIC",
         description: result.message,
         variant: "destructive",
-        action: <AlertTriangle />
+        action: <AlertTriangle className="text-red-500"/>
       });
     }
   };
@@ -144,9 +141,9 @@ export default function AttendanceMonitoringPage() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <CardTitle className="text-2xl font-headline flex items-center gap-2">
-                <ClipboardCheck className="text-primary h-7 w-7" /> Attendance Monitoring
+                <ClipboardCheck className="text-primary h-7 w-7" /> Attendance Monitoring (SSG)
               </CardTitle>
-              <CardDescription>View and filter attendance records for all events.</CardDescription>
+              <CardDescription>View and filter attendance records for all events. Data from Firestore.</CardDescription>
             </div>
             <Dialog open={isAddOICDialogOpen} onOpenChange={setIsAddOICDialogOpen}>
               <DialogTrigger asChild>
@@ -180,9 +177,10 @@ export default function AttendanceMonitoringPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddOICDialogOpen(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => setIsAddOICDialogOpen(false)} disabled={isAddingOIC}>Cancel</Button>
                   <Button onClick={handleAddOICSubmit} disabled={isAddingOIC} className="bg-primary hover:bg-primary/90">
-                    {isAddingOIC ? "Adding..." : "Add OIC"}
+                    {isAddingOIC && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Add OIC
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -191,84 +189,98 @@ export default function AttendanceMonitoringPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4 mb-6 items-center">
-            <Select value={selectedEventId} onValueChange={setSelectedEventId} disabled={events.length === 0}>
+            <Select value={selectedEventId} onValueChange={setSelectedEventId} disabled={allEvents.length === 0 || authLoading}>
               <SelectTrigger className="md:w-[300px]">
-                <SelectValue placeholder="Select an Event" />
+                <SelectValue placeholder={authLoading ? "Loading events..." : "Select an Event"} />
               </SelectTrigger>
               <SelectContent>
-                {events.length === 0 && <SelectItem value="no-events" disabled>No events available</SelectItem>}
-                {events.map(event => (
+                {allEvents.length === 0 && !authLoading && <SelectItem value="no-events" disabled>No events available</SelectItem>}
+                {allEvents.map(event => (
                   <SelectItem key={event.id} value={event.id}>{event.name} ({event.date})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Input 
-              placeholder="Search by student name or ID..." 
+              placeholder="Search by student name, ID, or email..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="flex-1"
-              disabled={!selectedEventId}
+              disabled={!selectedEventId || authLoading || isDataLoading}
             />
-             <Button variant="outline" disabled><Download className="mr-2 h-4 w-4" /> Export Data</Button>
+             <Button variant="outline" disabled><Download className="mr-2 h-4 w-4" /> Export Data (Not Impl.)</Button>
           </div>
 
-          {selectedEvent && summary && (
+          {isDataLoading && (
+             <div className="flex justify-center items-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2">Loading attendance data...</p>
+            </div>
+          )}
+
+          {!isDataLoading && selectedEvent && summary && (
             <Card className="mb-6 bg-muted/30">
               <CardHeader>
                 <CardTitle className="text-xl">Attendance Summary for: {selectedEvent.name}</CardTitle>
               </CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                <div><Users className="mx-auto h-6 w-6 text-primary mb-1"/><p className="text-2xl font-bold">{summary.total}</p><p className="text-sm text-muted-foreground">Total Expected</p></div>
-                <div><Check className="mx-auto h-6 w-6 text-green-500 mb-1"/><p className="text-2xl font-bold">{summary.present}</p><p className="text-sm text-muted-foreground">Present</p></div>
+                <div><Users className="mx-auto h-6 w-6 text-primary mb-1"/><p className="text-2xl font-bold">{summary.totalExpected}</p><p className="text-sm text-muted-foreground">Total Expected</p></div>
+                <div><Check className="mx-auto h-6 w-6 text-green-500 mb-1"/><p className="text-2xl font-bold">{summary.present}</p><p className="text-sm text-muted-foreground">Present/Late</p></div>
                 <div><Users className="mx-auto h-6 w-6 text-red-500 mb-1"/><p className="text-2xl font-bold">{summary.absent}</p><p className="text-sm text-muted-foreground">Absent</p></div>
                 <div><Percent className="mx-auto h-6 w-6 text-blue-500 mb-1"/><p className="text-2xl font-bold">{summary.attendanceRate.toFixed(1)}%</p><p className="text-sm text-muted-foreground">Attendance Rate</p></div>
               </CardContent>
             </Card>
           )}
           
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Student Name/ID</TableHead>
-                  <TableHead>Time In</TableHead>
-                  <TableHead>Time Out</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Scanned By (OIC ID)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attendanceRecords.length > 0 ? (
-                  attendanceRecords.map((record) => {
-                    const studentUser = allUsers.find(u => u.userID === record.studentUserID);
-                    return (
-                    <TableRow key={record.id}>
-                      <TableCell className="font-medium">{studentUser?.fullName || record.studentUserID}</TableCell>
-                      <TableCell>{record.timeIn || 'N/A'}</TableCell>
-                      <TableCell>{record.timeOut || 'N/A'}</TableCell>
-                      <TableCell><span className={`px-2 py-1 text-xs rounded-full font-semibold
-                        ${record.status === 'present' ? 'bg-green-100 text-green-700' :
-                          record.status === 'absent' ? 'bg-red-100 text-red-700' :
-                          record.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'}`}>{record.status.charAt(0).toUpperCase() + record.status.slice(1)}</span></TableCell>
-                      <TableCell>{record.scannedByOICUserID || 'N/A'}</TableCell>
-                    </TableRow>
-                    );
-                  })
-                ) : (
+          {!isDataLoading && (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground h-24">
-                      {events.length === 0 ? "No events available to display attendance for." : 
-                       !selectedEventId ? "Please select an event to view attendance." : 
-                       `No attendance records for this event${searchTerm ? ' matching your search' : ''}.`}
-                    </TableCell>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Time In</TableHead>
+                    <TableHead>Time Out</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Scanned By (OIC)</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filteredAttendanceRecords.length > 0 ? (
+                    filteredAttendanceRecords.map((record) => {
+                      const studentUser = allUsers.find(u => u.userID === record.studentUserID);
+                      const oicUser = allUsers.find(u => u.userID === record.scannedByOICUserID);
+                      return (
+                      <TableRow key={record.id}>
+                        <TableCell className="font-medium">{studentUser?.fullName || record.studentUserID}</TableCell>
+                        <TableCell>{studentUser?.email || 'N/A'}</TableCell>
+                        <TableCell>{record.timeIn || 'N/A'}</TableCell>
+                        <TableCell>{record.timeOut || 'N/A'}</TableCell>
+                        <TableCell><span className={`px-2 py-1 text-xs rounded-full font-semibold
+                          ${record.status === 'present' ? 'bg-green-100 text-green-700' :
+                            record.status === 'absent' ? 'bg-red-100 text-red-700' :
+                            record.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-700'}`}>{record.status.charAt(0).toUpperCase() + record.status.slice(1)}</span></TableCell>
+                        <TableCell>{oicUser?.fullName?.split(' ')[0] || record.scannedByOICUserID}</TableCell>
+                      </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground h-24">
+                        {allEvents.length === 0 && !authLoading ? "No events available to display attendance for." : 
+                         !selectedEventId && !authLoading ? "Please select an event to view attendance." : 
+                         authLoading || isDataLoading ? "Loading..." :
+                         `No attendance records for this event${searchTerm ? ' matching your search' : ''}.`}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
+

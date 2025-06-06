@@ -32,7 +32,7 @@ export interface UserProfile {
   email: string;
   fullName: string;
   role: UserRole;
-  password?: string; // Added password field
+  password?: string; 
   departmentID?: string; 
   clubID?: string; 
   assignedClubId?: string; 
@@ -65,5 +65,7 @@ export interface AttendanceRecord {
   timeIn: string | null; 
   timeOut: string | null; 
   status: 'present' | 'absent' | 'late' | 'pending'; 
-  scannedByOICUserID: string; 
+  scannedByOICUserID: string;
+  timestamp?: any; // Firestore Timestamp
 }
+
