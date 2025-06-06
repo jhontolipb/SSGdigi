@@ -15,9 +15,10 @@ interface AuthContextType {
   allUsers: UserProfile[]; 
   updateUserClub: (userId: string, clubId: string | null) => void; 
   addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
-  updateUser: (updatedUser: UserProfile) => void; // For SSG user management
-  addUser: (newUser: UserProfile) => void; // For SSG user management
-  deleteUser: (userId: string) => void; // For SSG user management
+  updateUser: (updatedUser: UserProfile) => void; 
+  addUser: (newUser: UserProfile) => void; 
+  deleteUser: (userId: string) => void; 
+  changePassword: (userId: string, currentPasswordAttempt: string, newPassword: string) => Promise<{ success: boolean, message: string }>;
   allClubs: Club[];
   allDepartments: Department[];
 }
@@ -71,10 +72,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = localStorage.getItem('campusConnectUser');
     if (storedUser) {
       const parsedUser = JSON.parse(storedUser);
+      // Ensure the stored user's data (especially password) is up-to-date with allUsers
       const canonicalUser = allUsers.find(u => u.userID === parsedUser.userID);
       if (canonicalUser) {
         setUser(canonicalUser); 
       } else if (parsedUser.role === 'student' && parsedUser.qrCodeId) { 
+        // This case might be for newly registered students not yet in initialMockUsers if not added immediately
         setUser(parsedUser);
         if(!allUsers.find(u => u.userID === parsedUser.userID)) { 
             setAllUsers(prev => [...prev, parsedUser]);
@@ -82,7 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     setLoading(false);
-  }, [allUsers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount, allUsers will be used from state later
 
   useEffect(() => {
     if (!loading && !user && !['/login', '/register'].includes(pathname)) {
@@ -103,19 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (email: string, passwordAttempt: string) => {
     const foundUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
     
-    if (foundUser) {
-      // For student role, password check is simplified for this mock. 
-      // For other roles, we check the password.
-      if (foundUser.role === 'student' || foundUser.password === passwordAttempt) {
+    if (foundUser && foundUser.password === passwordAttempt) {
         localStorage.setItem('campusConnectUser', JSON.stringify(foundUser));
         setUser(foundUser);
          toast({ title: "Login Successful", description: `Welcome back, ${foundUser.fullName}!` });
       } else {
         toast({ title: "Login Failed", description: "Invalid email or password.", variant: "destructive" });
       }
-    } else {
-      toast({ title: "Login Failed", description: "User not found.", variant: "destructive" });
-    }
   };
 
   const registerStudent = (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
@@ -131,13 +129,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fullName,
       role: 'student',
       departmentID: departmentId,
-      password: passwordAttempt, // Store the password
+      password: passwordAttempt,
       qrCodeID: 'qr-' + Math.random().toString(36).substr(2, 9),
       points: 0,
     };
+    
+    setAllUsers(prev => {
+        const updatedAllUsers = [...prev, newStudent];
+        localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers)); // Persist for demo
+        return updatedAllUsers;
+    });
     localStorage.setItem('campusConnectUser', JSON.stringify(newStudent));
     setUser(newStudent);
-    setAllUsers(prev => [...prev, newStudent]); 
     toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
     router.push('/student/dashboard');
   };
@@ -149,11 +152,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   
   const updateUserClub = (userId: string, clubId: string | null) => {
-    setAllUsers(prevUsers => 
-      prevUsers.map(u => 
-        u.userID === userId ? { ...u, clubID: clubId || undefined } : u
-      )
-    );
+    setAllUsers(prevUsers => {
+        const updated = prevUsers.map(u => 
+            u.userID === userId ? { ...u, clubID: clubId || undefined } : u
+        );
+        localStorage.setItem('allMockUsers', JSON.stringify(updated));
+        return updated;
+    });
     if (user && user.userID === userId) {
       const updatedUser = { ...user, clubID: clubId || undefined };
       setUser(updatedUser);
@@ -177,14 +182,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: 'oic',
           password: defaultPassword, 
         };
-        setAllUsers(prev => [...prev, newOIC]);
+        setAllUsers(prev => {
+            const updated = [...prev, newOIC];
+            localStorage.setItem('allMockUsers', JSON.stringify(updated));
+            return updated;
+        });
         resolve({ success: true, message: "New OIC added successfully." });
       }, 500);
     });
   };
 
   const updateUser = (updatedUser: UserProfile) => {
-    setAllUsers(prevUsers => prevUsers.map(u => u.userID === updatedUser.userID ? updatedUser : u));
+    setAllUsers(prevUsers => {
+        const updated = prevUsers.map(u => u.userID === updatedUser.userID ? updatedUser : u);
+        localStorage.setItem('allMockUsers', JSON.stringify(updated));
+        return updated;
+    });
     if (user && user.userID === updatedUser.userID) {
       setUser(updatedUser);
       localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
@@ -192,14 +205,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const addUser = (newUser: UserProfile) => {
-    setAllUsers(prevUsers => [...prevUsers, newUser]);
+    setAllUsers(prevUsers => {
+        const updated = [...prevUsers, newUser];
+        localStorage.setItem('allMockUsers', JSON.stringify(updated));
+        return updated;
+    });
   };
 
   const deleteUser = (userId: string) => {
-    setAllUsers(prevUsers => prevUsers.filter(u => u.userID !== userId));
-     if (user && user.userID === userId) { // If deleting self, logout
+    setAllUsers(prevUsers => {
+        const updated = prevUsers.filter(u => u.userID !== userId);
+        localStorage.setItem('allMockUsers', JSON.stringify(updated));
+        return updated;
+    });
+     if (user && user.userID === userId) { 
         logout();
     }
+  };
+
+  const changePassword = async (userId: string, currentPasswordAttempt: string, newPassword: string): Promise<{ success: boolean, message: string }> => {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const userIndex = allUsers.findIndex(u => u.userID === userId);
+            if (userIndex === -1) {
+                resolve({ success: false, message: "User not found." });
+                return;
+            }
+
+            const targetUser = allUsers[userIndex];
+            if (targetUser.password !== currentPasswordAttempt) {
+                resolve({ success: false, message: "Current password incorrect." });
+                return;
+            }
+
+            const updatedUser = { ...targetUser, password: newPassword };
+            
+            const updatedAllUsers = [...allUsers];
+            updatedAllUsers[userIndex] = updatedUser;
+            setAllUsers(updatedAllUsers);
+            localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers));
+
+            if (user && user.userID === userId) {
+                setUser(updatedUser);
+                localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
+            }
+            resolve({ success: true, message: "Password updated successfully." });
+        }, 500);
+    });
   };
 
 
@@ -216,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser,
         addUser,
         deleteUser,
+        changePassword,
         allClubs: defaultClubs,
         allDepartments: defaultDepartments,
     }}>
