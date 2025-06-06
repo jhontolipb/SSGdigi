@@ -238,9 +238,9 @@ export function AIComposeForm() {
                 <Label htmlFor="urgencyLevel" className="font-semibold">Suggested Urgency Level:</Label>
                 <Input id="urgencyLevel" value={composedNotification.urgencyLevel} readOnly className="mt-1 bg-background capitalize" />
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => navigator.clipboard.writeText(composedNotification.message)} disabled={isSending}>Copy Message</Button>
-                <Button onClick={handleSendNotification} disabled={isSending || isComposing} className="bg-accent hover:bg-accent/90">
+              <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2">
+                <Button variant="outline" onClick={() => navigator.clipboard.writeText(composedNotification.message)} disabled={isSending} className="w-full sm:w-auto">Copy Message</Button>
+                <Button onClick={handleSendNotification} disabled={isSending || isComposing} className="bg-accent hover:bg-accent/90 w-full sm:w-auto">
                   {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4"/>}
                   Send Notification
                 </Button>

@@ -47,7 +47,6 @@ export default function MessagesPage() {
 
   // Listener for messages in the selected conversation
   useEffect(() => {
-    // listenForMessages will internally handle clearing messages if selectedConversationId is null
     const unsubscribe = listenForMessages(selectedConversationId); 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +124,7 @@ export default function MessagesPage() {
 
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] md:flex-row rounded-lg border bg-card text-card-foreground shadow-lg">
+    <div className="flex flex-col h-full md:flex-row rounded-lg border bg-card text-card-foreground shadow-lg">
       {/* Conversation List Sidebar */}
       <div className="w-full md:w-1/3 lg:w-1/4 border-r flex flex-col">
         <div className="p-4 border-b">

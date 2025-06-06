@@ -131,7 +131,7 @@ export default function SettingsPage() {
           {Object.entries(colorConfigurations).map(([key, config]) => {
             const currentColor = themeSettings[key] || config.defaultHSL;
             return (
-              <Card key={key} className="p-4 shadow-md bg-muted/20">
+              <Card key={key} className="p-3 md:p-4 shadow-md bg-muted/20">
                 <CardHeader className="p-2 mb-3">
                     <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">{config.label}</CardTitle>
@@ -172,7 +172,7 @@ export default function SettingsPage() {
               </Card>
             );
           })}
-          <div className="flex gap-4 pt-6 border-t mt-8">
+          <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:gap-4 pt-6 border-t mt-8">
             <Button onClick={handleSaveSettings} className="bg-primary hover:bg-primary/90">
               <Save className="mr-2 h-4 w-4" /> Save Settings
             </Button>
