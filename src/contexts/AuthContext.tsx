@@ -13,6 +13,7 @@ interface AuthContextType {
   registerStudent: (fullName: string, email: string, departmentId: string) => void;
   allUsers: UserProfile[]; // To simulate a user database
   updateUserClub: (userId: string, clubId: string | null) => void; // For club member management
+  addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
   allClubs: Club[];
   allDepartments: Department[];
 }
@@ -167,6 +168,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const addNewOIC = async (fullName: string, email: string): Promise<{success: boolean, message: string}> => {
+    return new Promise((resolve) => {
+      // Simulate API call delay
+      setTimeout(() => {
+        const existingUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (existingUser) {
+          resolve({ success: false, message: "Email already registered." });
+          return;
+        }
+
+        const newOIC: UserProfile = {
+          userID: 'oic-' + Math.random().toString(36).substring(2, 9),
+          email,
+          fullName,
+          role: 'oic',
+          // Optionally assign a default department or leave it undefined for this quick add
+          // departmentID: defaultDepartments[0].id 
+        };
+        setAllUsers(prev => [...prev, newOIC]);
+        resolve({ success: true, message: "New OIC added successfully." });
+      }, 500);
+    });
+  };
+
   return (
     <AuthContext.Provider value={{ 
         user, 
@@ -176,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         registerStudent, 
         allUsers, 
         updateUserClub,
+        addNewOIC,
         allClubs: defaultClubs,
         allDepartments: defaultDepartments,
     }}>

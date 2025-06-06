@@ -11,8 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ClipboardCheck, Users, CalendarDays, Percent, Download, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { ClipboardCheck, Users, CalendarDays, Percent, Download, Check, UserPlus, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { Event } from '@/types/user';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 // Mock Data
 const mockEvents: Event[] = [
@@ -56,6 +60,14 @@ export default function AttendanceMonitoringPage() {
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [isAddOICDialogOpen, setIsAddOICDialogOpen] = useState(false);
+  const [newOICFullName, setNewOICFullName] = useState('');
+  const [newOICEmail, setNewOICEmail] = useState('');
+  const [isAddingOIC, setIsAddingOIC] = useState(false);
+
+  const { addNewOIC } = useAuth();
+  const { toast } = useToast();
+
   useEffect(() => {
     if (selectedEventId) {
       const records = mockAttendance[selectedEventId] || [];
@@ -81,14 +93,107 @@ export default function AttendanceMonitoringPage() {
 
   const selectedEvent = mockEvents.find(e => e.id === selectedEventId);
 
+  const handleAddOICSubmit = async () => {
+    if (!newOICFullName.trim() || !newOICEmail.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Full name and email are required for the new OIC.",
+        variant: "destructive",
+        action: <AlertTriangle />
+      });
+      return;
+    }
+    // Basic email validation
+    if (!/\S+@\S+\.\S+/.test(newOICEmail)) {
+        toast({
+            title: "Validation Error",
+            description: "Please enter a valid email address.",
+            variant: "destructive",
+            action: <AlertTriangle />
+        });
+        return;
+    }
+
+    setIsAddingOIC(true);
+    const result = await addNewOIC(newOICFullName, newOICEmail);
+    setIsAddingOIC(false);
+
+    if (result.success) {
+      toast({
+        title: "OIC Added",
+        description: result.message,
+        variant: "default",
+        action: <CheckCircle2 />
+      });
+      setNewOICFullName('');
+      setNewOICEmail('');
+      setIsAddOICDialogOpen(false);
+      // Optionally, you might want to refresh lists of OICs if they are displayed elsewhere or used in dropdowns
+    } else {
+      toast({
+        title: "Error Adding OIC",
+        description: result.message,
+        variant: "destructive",
+        action: <AlertTriangle />
+      });
+    }
+  };
+
+
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-headline flex items-center gap-2">
-            <ClipboardCheck className="text-primary h-7 w-7" /> Attendance Monitoring
-          </CardTitle>
-          <CardDescription>View and filter attendance records for all events.</CardDescription>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <CardTitle className="text-2xl font-headline flex items-center gap-2">
+                <ClipboardCheck className="text-primary h-7 w-7" /> Attendance Monitoring
+              </CardTitle>
+              <CardDescription>View and filter attendance records for all events.</CardDescription>
+            </div>
+            <Dialog open={isAddOICDialogOpen} onOpenChange={setIsAddOICDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="mt-2 md:mt-0">
+                  <UserPlus className="mr-2 h-4 w-4" /> Add New OIC
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add New Officer-in-Charge (OIC)</DialogTitle>
+                  <DialogDescription>
+                    Enter the details for the new OIC. They will be added to the system.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div>
+                    <Label htmlFor="oicFullName">Full Name</Label>
+                    <Input 
+                      id="oicFullName" 
+                      value={newOICFullName} 
+                      onChange={(e) => setNewOICFullName(e.target.value)} 
+                      placeholder="e.g., Juan Dela Cruz" 
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="oicEmail">Email Address</Label>
+                    <Input 
+                      id="oicEmail" 
+                      type="email" 
+                      value={newOICEmail} 
+                      onChange={(e) => setNewOICEmail(e.target.value)} 
+                      placeholder="e.g., juan.oic@example.com"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsAddOICDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleAddOICSubmit} disabled={isAddingOIC} className="bg-primary hover:bg-primary/90">
+                    {isAddingOIC ? "Adding..." : "Add OIC"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col md:flex-row gap-4 mb-6 items-center">
