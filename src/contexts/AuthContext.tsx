@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord } from '@/types/user';
+import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord, ClearanceRequest, ApprovalStatus } from '@/types/user';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +32,7 @@ import {
   QuerySnapshot,
   DocumentData,
   orderBy,
+  limit,
 } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -75,6 +76,17 @@ interface AuthContextType {
   addAttendanceRecord: (recordData: Omit<AttendanceRecord, 'id'>) => Promise<string | null>;
   updateAttendanceRecord: (recordId: string, updates: Partial<AttendanceRecord>) => Promise<void>;
   findStudentEventAttendance: (studentUserID: string, eventID: string) => Promise<AttendanceRecord | null>;
+
+  // Clearance
+  studentClearanceRequest: ClearanceRequest | null;
+  allClearanceRequests: ClearanceRequest[];
+  initiateClearanceRequest: () => Promise<void>;
+  fetchStudentClearanceRequest: (studentId: string) => Promise<void>;
+  fetchAllClearanceRequests: () => Promise<void>;
+  updateSsgClearanceStatus: (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => Promise<void>;
+  updateClubClearanceStatus: (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => Promise<void>;
+  updateDepartmentClearanceStatus: (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => Promise<void>;
+
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -87,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allClubs, setAllClubs] = useState<Club[]>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
   const [currentEventAttendance, setCurrentEventAttendance] = useState<AttendanceRecord[]>([]);
+  const [studentClearanceRequest, setStudentClearanceRequest] = useState<ClearanceRequest | null>(null);
+  const [allClearanceRequests, setAllClearanceRequests] = useState<ClearanceRequest[]>([]);
+
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -158,7 +173,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userDocRef = doc(db, 'users', firebaseUser.uid);
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
-            setUser({ userID: firebaseUser.uid, ...userDocSnap.data() } as UserProfile);
+            const userData = { userID: firebaseUser.uid, ...userDocSnap.data() } as UserProfile;
+            setUser(userData);
+            if (userData.role === 'student') {
+              fetchStudentClearanceRequest(userData.userID);
+            } else if (userData.role === 'ssg_admin') {
+              fetchAllClearanceRequests();
+            }
           } else {
             console.warn("User exists in Auth, but no profile in Firestore. Logging out.");
             await signOut(auth);
@@ -170,6 +191,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         setUser(null);
+        setStudentClearanceRequest(null);
+        setAllClearanceRequests([]);
       }
       setLoading(false);
     });
@@ -226,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
       
-      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole } = {
+      const dataForFirestore: Omit<UserProfile, 'password'> = {
         userID: firebaseUser.uid,
         email,
         fullName,
@@ -257,6 +280,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAllClubs([]);
       setAllEvents([]);
       setCurrentEventAttendance([]);
+      setStudentClearanceRequest(null);
+      setAllClearanceRequests([]);
       router.push('/login');
     } catch (error: any) {
       console.error("Logout error", error);
@@ -311,7 +336,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let createdAuthUserUid: string | null = null;
     const currentAuthUser = auth.currentUser;
-    const adminPassword = user?.password; 
+    const adminEmail = user?.email; 
+    const adminPasswordAttempt = user?.password; 
+
 
     try {
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
@@ -339,14 +366,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataForFirestore.points = 0;
       }
 
+
       await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
 
-      if (currentAuthUser && currentAuthUser.email && adminPassword) {
+      if (currentAuthUser && adminEmail && adminPasswordAttempt) { // Re-authenticate admin
         await signOut(auth); 
         try {
-            await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
+            await signInWithEmailAndPassword(auth, adminEmail, adminPasswordAttempt);
+            // Re-fetch admin's profile if necessary, or rely on onAuthStateChanged
         } catch (reauthError) {
             console.warn("Admin re-authentication failed after creating user. Admin may need to log in again.", reauthError);
+            // Optionally force admin to login page
+            // router.push('/login'); 
         }
       }
 
@@ -359,9 +390,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
-      if (!auth.currentUser && currentAuthUser && currentAuthUser.email && adminPassword) {
+      if (!auth.currentUser && currentAuthUser && adminEmail && adminPasswordAttempt) { // Final re-auth attempt
         try {
-            await signInWithEmailAndPassword(auth, currentAuthUser.email, adminPassword);
+            await signInWithEmailAndPassword(auth, adminEmail, adminPasswordAttempt);
         } catch (finalReauthError) {
             console.warn("Final admin re-authentication attempt failed.", finalReauthError);
         }
@@ -398,7 +429,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await firebaseUpdatePassword(firebaseUser, newPassword);
       toast({ title: "Success", description: "Password updated successfully." });
       if (user && user.userID === firebaseUser.uid) {
-        setUser(prev => prev ? ({...prev, password: newPassword}) : null);
+        // Note: Storing password in user state is not recommended for security.
+        // This is a placeholder for if you were directly managing it, which we are not.
+        // setUser(prev => prev ? ({...prev, password: newPassword}) : null);
       }
       return { success: true, message: "Password updated successfully." };
     } catch (error: any) {
@@ -460,9 +493,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       if (clubData.description && clubData.description.trim() !== "") {
         dataToSave.description = clubData.description;
+      } else {
+        dataToSave.description = undefined;
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToSave.departmentId = clubData.departmentId;
+      } else {
+        dataToSave.departmentId = undefined;
       }
 
       const docRef = await addDoc(clubColRef, dataToSave);
@@ -613,7 +650,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: serverTimestamp() 
       });
       toast({ title: "Attendance Recorded", description: `Student ${recordData.studentUserID} marked ${recordData.status}.`});
-      if (recordData.eventID === (allEvents.find(e => e.id === recordData.eventID)?.id)) { // Check if current event matches
+      if (recordData.eventID === (allEvents.find(e => e.id === recordData.eventID)?.id)) { 
          await fetchAttendanceRecordsForEvent(recordData.eventID);
       }
       return docRef.id;
@@ -632,7 +669,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: serverTimestamp() 
       });
       toast({ title: "Attendance Updated", description: `Record ${recordId} updated.`});
-      if (updates.eventID) { // If eventID is part of updates, refetch for that event
+      if (updates.eventID) { 
         await fetchAttendanceRecordsForEvent(updates.eventID);
       }
     } catch (error: any) {
@@ -646,7 +683,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const q = query(
         collection(db, "attendanceRecords"),
         where("studentUserID", "==", studentUserID),
-        where("eventID", "==", eventID)
+        where("eventID", "==", eventID),
+        limit(1)
       );
       const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
       if (!querySnapshot.empty) {
@@ -659,6 +697,157 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({ title: "Attendance Error", description: (error as Error).message || "Could not find attendance record.", variant: "destructive" });
       return null;
     }
+  };
+
+  // --- Clearance Request Functions ---
+  const initiateClearanceRequest = async () => {
+    if (!user || user.role !== 'student') {
+      toast({ title: "Error", description: "Only students can initiate clearance requests.", variant: "destructive" });
+      return;
+    }
+    if (studentClearanceRequest && studentClearanceRequest.overallStatus !== 'Rejected' && studentClearanceRequest.overallStatus !== 'Not Requested') {
+        toast({ title: "Info", description: "You already have an active or completed clearance request.", variant: "default" });
+        return;
+    }
+
+    const studentDept = allDepartments.find(d => d.id === user.departmentID);
+    const studentClub = user.clubID ? allClubs.find(c => c.id === user.clubID) : null;
+
+    const newRequestData: Omit<ClearanceRequest, 'id'> = {
+      studentUserID: user.userID,
+      studentFullName: user.fullName,
+      studentDepartmentName: studentDept?.name || 'N/A',
+      studentClubName: studentClub?.name || undefined,
+      requestedDate: serverTimestamp(),
+      clubIdAtRequest: user.clubID || undefined,
+      departmentIdAtRequest: user.departmentID!,
+      clubApprovalStatus: user.clubID ? 'pending' : 'not_applicable',
+      departmentApprovalStatus: 'pending',
+      ssgStatus: 'pending',
+      overallStatus: 'Pending',
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, "clearanceRequests"), newRequestData);
+      setStudentClearanceRequest({ ...newRequestData, id: docRef.id, requestedDate: new Date() }); // Optimistic update
+      toast({ title: "Success", description: "Clearance request initiated." });
+    } catch (error: any) {
+      console.error("Error initiating clearance request:", error);
+      toast({ title: "Error", description: error.message || "Could not initiate clearance request.", variant: "destructive" });
+    }
+  };
+
+  const fetchStudentClearanceRequest = async (studentId: string) => {
+    try {
+      const q = query(
+        collection(db, "clearanceRequests"),
+        where("studentUserID", "==", studentId),
+        orderBy("requestedDate", "desc"),
+        limit(1)
+      );
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        const requestData = { id: docSnap.id, ...docSnap.data() } as ClearanceRequest;
+        // Convert Firestore Timestamps to JS Date objects if necessary
+        if (requestData.requestedDate && requestData.requestedDate.toDate) {
+            requestData.requestedDate = requestData.requestedDate.toDate().toLocaleDateString();
+        }
+        setStudentClearanceRequest(requestData);
+      } else {
+        setStudentClearanceRequest(null);
+      }
+    } catch (error) {
+      console.error("Error fetching student clearance request:", error);
+      setStudentClearanceRequest(null);
+    }
+  };
+  
+  const fetchAllClearanceRequests = async () => {
+    try {
+      const q = query(collection(db, "clearanceRequests"), orderBy("requestedDate", "desc"));
+      const querySnapshot = await getDocs(q);
+      const requests = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data() as Omit<ClearanceRequest, 'id'>;
+        return {
+            id: docSnap.id,
+            ...data,
+            requestedDate: data.requestedDate && (data.requestedDate as Timestamp).toDate ? (data.requestedDate as Timestamp).toDate().toLocaleDateString() : String(data.requestedDate)
+        } as ClearanceRequest;
+      });
+      setAllClearanceRequests(requests);
+    } catch (error) {
+      console.error("Error fetching all clearance requests:", error);
+      toast({ title: "Error", description: (error as Error).message || "Could not fetch clearance requests.", variant: "destructive" });
+    }
+  };
+
+  const updateClearanceStageStatus = async (
+    requestId: string,
+    stage: 'club' | 'department' | 'ssg',
+    status: ApprovalStatus,
+    approverId: string,
+    notes?: string
+  ) => {
+    if (!user) return;
+    const clearanceDocRef = doc(db, "clearanceRequests", requestId);
+    const updates: Partial<ClearanceRequest> = {
+        [`${stage}ApprovalStatus`]: status,
+        [`${stage}ApproverID`]: approverId,
+        [`${stage}ApprovalDate`]: serverTimestamp(),
+        [`${stage}ApprovalNotes`]: notes || undefined, // Use undefined to remove field if notes are empty
+    };
+
+    // Logic to determine overall status
+    const currentRequest = allClearanceRequests.find(r => r.id === requestId) || 
+                           (studentClearanceRequest?.id === requestId ? studentClearanceRequest : null);
+
+    if (currentRequest) {
+        const tempUpdatedRequest = { ...currentRequest, ...updates };
+        let overall: ClearanceRequest['overallStatus'] = 'Pending';
+        if (status === 'rejected') {
+            overall = 'Rejected';
+            updates.ssgStatus = 'rejected'; // If any stage rejects, SSG is implicitly rejected
+        } else if (
+            (tempUpdatedRequest.clubApprovalStatus === 'approved' || tempUpdatedRequest.clubApprovalStatus === 'not_applicable') &&
+            tempUpdatedRequest.departmentApprovalStatus === 'approved' &&
+            (stage === 'ssg' && status === 'approved') // Only if SSG is approving now
+        ) {
+            overall = 'Approved';
+            updates.unifiedClearanceID = `UC-${new Date().getFullYear()}-${requestId.substring(0, 4)}`;
+        } else if (
+            (tempUpdatedRequest.clubApprovalStatus === 'approved' || tempUpdatedRequest.clubApprovalStatus === 'not_applicable') &&
+            tempUpdatedRequest.departmentApprovalStatus === 'approved' &&
+            tempUpdatedRequest.ssgStatus === 'approved' // if SSG was already approved (e.g. an earlier stage is re-approved)
+        ) {
+             overall = 'Approved'; // Stays approved
+        }
+        updates.overallStatus = overall;
+    }
+
+
+    try {
+        await updateDoc(clearanceDocRef, updates as DocumentData); // Cast to DocumentData for Firestore
+        toast({ title: "Success", description: `Clearance request ${stage} stage updated to ${status}.` });
+        if (user.role === 'student') {
+            await fetchStudentClearanceRequest(user.userID);
+        } else {
+            await fetchAllClearanceRequests(); // For admins
+        }
+    } catch (error: any) {
+        console.error(`Error updating ${stage} clearance status:`, error);
+        toast({ title: "Error", description: error.message || `Could not update ${stage} clearance status.`, variant: "destructive" });
+    }
+  };
+
+  const updateSsgClearanceStatus = (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => {
+      return updateClearanceStageStatus(requestId, 'ssg', status, approverId, notes);
+  };
+  const updateClubClearanceStatus = (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => {
+      return updateClearanceStageStatus(requestId, 'club', status, approverId, notes);
+  };
+  const updateDepartmentClearanceStatus = (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => {
+      return updateClearanceStageStatus(requestId, 'department', status, approverId, notes);
   };
 
 
@@ -698,6 +887,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         addAttendanceRecord,
         updateAttendanceRecord,
         findStudentEventAttendance,
+        studentClearanceRequest,
+        allClearanceRequests,
+        initiateClearanceRequest,
+        fetchStudentClearanceRequest,
+        fetchAllClearanceRequests,
+        updateSsgClearanceStatus,
+        updateClubClearanceStatus,
+        updateDepartmentClearanceStatus,
     }}>
       {children}
     </AuthContext.Provider>

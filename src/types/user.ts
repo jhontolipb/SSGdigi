@@ -40,22 +40,35 @@ export interface UserProfile {
   points?: number; 
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'not_started';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'not_applicable';
 export interface ClearanceRequest {
-  requestID: string;
+  id: string; // Firestore document ID
   studentUserID: string; 
-  requestedDate: string;
+  studentFullName: string; // Denormalized for easier display
+  studentDepartmentName: string; // Denormalized
+  studentClubName?: string; // Denormalized
+  requestedDate: any; // Firestore Timestamp or string
+  
+  clubIdAtRequest?: string; // Student's club ID at the time of request
+  departmentIdAtRequest: string; // Student's department ID at the time of request
+
   clubApprovalStatus: ApprovalStatus;
   clubApproverID?: string;
-  clubApprovalDate?: string;
+  clubApprovalDate?: any; // Firestore Timestamp or string
+  clubApprovalNotes?: string;
+
   departmentApprovalStatus: ApprovalStatus;
   departmentApproverID?: string;
-  departmentApprovalDate?: string;
+  departmentApprovalDate?: any; // Firestore Timestamp or string
+  departmentApprovalNotes?: string;
+
   ssgStatus: ApprovalStatus;
   ssgApproverID?: string;
-  ssgApprovalDate?: string;
-  unifiedClearanceID?: string;
-  sanctionDetails?: string;
+  ssgApprovalDate?: any; // Firestore Timestamp or string
+  ssgApprovalNotes?: string; // Consolidated notes or SSG specific notes
+
+  unifiedClearanceID?: string; // Generated upon final SSG approval
+  overallStatus: 'Pending' | 'Approved' | 'Rejected' | 'Action Required' | 'Not Requested'; // Calculated or set
 }
 
 export interface AttendanceRecord {
