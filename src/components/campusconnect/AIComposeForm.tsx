@@ -20,10 +20,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Bot, AlertTriangle, CheckCircle2, Wand2, Send } from 'lucide-react'; // Added Send icon
+import { Loader2, Bot, AlertTriangle, CheckCircle2, Wand2, Send } from 'lucide-react';
 import { composeNotification, ComposeNotificationInput, ComposeNotificationOutput } from '@/ai/flows/compose-notification';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext"; // Added useAuth
+import { useAuth } from "@/contexts/AuthContext";
 
 const formSchema = z.object({
   recipientGroup: z.string().min(3, { message: "Recipient group must be at least 3 characters." }),
@@ -55,7 +55,7 @@ export function AIComposeForm() {
   const [composedNotification, setComposedNotification] = useState<ComposeNotificationOutput | null>(null);
   const [formInputData, setFormInputData] = useState<z.infer<typeof formSchema> | null>(null);
   const { toast } = useToast();
-  const { storeComposedNotification, user } = useAuth(); // Get storeComposedNotification from AuthContext
+  const { storeComposedNotification, user } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -69,7 +69,7 @@ export function AIComposeForm() {
   async function onComposeSubmit(values: z.infer<typeof formSchema>) {
     setIsComposing(true);
     setComposedNotification(null);
-    setFormInputData(values); // Store form input for sending later
+    setFormInputData(values);
     try {
       const result = await composeNotification(values as ComposeNotificationInput);
       setComposedNotification(result);
@@ -81,9 +81,17 @@ export function AIComposeForm() {
       });
     } catch (error) {
       console.error("Error composing notification:", error);
+      let description = "An unexpected error occurred while trying to compose the notification.";
+      if (error instanceof Error) {
+        if (error.message.includes("503") || error.message.toLowerCase().includes("overloaded")) {
+          description = "The AI model is currently overloaded. Please try again in a few moments.";
+        } else {
+          description = error.message;
+        }
+      }
       toast({
-        title: "Error Composing Notification",
-        description: (error as Error).message || "An unexpected error occurred.",
+        title: "AI Composition Failed",
+        description: description,
         variant: "destructive",
         action: <AlertTriangle className="text-red-500"/>,
       });
@@ -110,15 +118,11 @@ export function AIComposeForm() {
           description: "The composed notification has been saved.",
           action: <CheckCircle2 className="text-green-500" />,
         });
-        // Optionally reset the form or clear composedNotification
         setComposedNotification(null);
         form.reset();
         setFormInputData(null);
-      } else {
-        // Error toast is handled by storeComposedNotification in context
       }
     } catch (error) {
-      // Error toast is likely handled by context, but can add a fallback
       console.error("Error sending notification from form:", error);
       toast({
         title: "Sending Error",
