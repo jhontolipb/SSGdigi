@@ -5,7 +5,7 @@ import type { UserRole, UserProfile, Department, Club, Event } from '@/types/use
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase'; // Ensure this path is correct
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -25,7 +25,7 @@ import {
   getDocs,
   query,
   where,
-  addDoc, // For adding new documents with auto-generated IDs
+  addDoc,
   // serverTimestamp // If you want to add timestamps
 } from 'firebase/firestore';
 
@@ -81,12 +81,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
-  const [allDepartments, setAllDepartments] = useState<Department[]>([]); // Initialize as empty
-  const [allClubs, setAllClubs] = useState<Club[]>(defaultClubs); // Mock for now
-  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents); // Mock for now
+  const [allDepartments, setAllDepartments] = useState<Department[]>([]);
+  const [allClubs, setAllClubs] = useState<Club[]>(defaultClubs);
+  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents);
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
+
+
+  const fetchUsers = async () => {
+    try {
+      const usersCollectionRef = collection(db, "users");
+      const querySnapshot = await getDocs(usersCollectionRef);
+      const usersList = querySnapshot.docs.map(docSnap => ({ userID: docSnap.id, ...docSnap.data() } as UserProfile));
+      setAllUsers(usersList);
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+      toast({ title: "Error", description: "Could not load user data.", variant: "destructive" });
+    }
+  };
 
   const fetchDepartments = async () => {
     try {
@@ -99,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAllDepartments(departmentsList);
     } catch (error) {
       console.error("Error fetching departments:", error);
-      toast({ title: "Error", description: "Could not load department data.", variant: "destructive" });
+      toast({ title: "Error loading departments", description: (error as Error).message || "Could not load department data.", variant: "destructive" });
     }
   };
 
@@ -118,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } catch (error) {
             console.error("Error fetching user profile from Firestore:", error);
-            setUser(null);
+            setUser(null); // Ensure user is null on error
         }
       } else {
         setUser(null);
@@ -127,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     fetchUsers();
-    fetchDepartments(); // Fetch departments on initial load
+    fetchDepartments();
 
     const storedEvents = localStorage.getItem('campusConnectEvents');
     if (storedEvents) {
@@ -136,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (Array.isArray(parsedEvents)) setAllEvents(parsedEvents);
         } catch(e) { console.error("Failed to parse events from LS", e); }
     }
+
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,27 +165,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             case 'department_admin': router.push('/department-admin/dashboard'); break;
             case 'oic': router.push('/oic/events'); break;
             case 'student': router.push('/student/dashboard'); break;
-            default: router.push('/login');
+            default: router.push('/login'); // Fallback
         }
     }
   }, [user, loading, pathname, router]);
 
-  const fetchUsers = async () => {
-    try {
-      const usersCollectionRef = collection(db, "users");
-      const querySnapshot = await getDocs(usersCollectionRef);
-      const usersList = querySnapshot.docs.map(docSnap => ({ userID: docSnap.id, ...docSnap.data() } as UserProfile));
-      setAllUsers(usersList);
-    } catch (error) {
-      console.error("Error fetching all users:", error);
-      toast({ title: "Error", description: "Could not load user data.", variant: "destructive" });
-    }
-  };
 
   const login = async (email: string, passwordAttempt: string) => {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, passwordAttempt);
+      // onAuthStateChanged will handle setting user and navigation
       toast({ title: "Login Successful", description: `Welcome back!` });
     } catch (error: any) {
       console.error("Login error", error);
@@ -184,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerStudent = async (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
     setLoading(true);
     try {
+      // Check if email already exists in Firestore users collection (as a pre-check)
       const usersQuery = query(collection(db, "users"), where("email", "==", email));
       const querySnapshot = await getDocs(usersQuery);
       if (!querySnapshot.empty) {
@@ -200,12 +205,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fullName,
         role: 'student',
         departmentID: departmentId,
-        qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4),
+        qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4), // Example QR ID
         points: 0,
       };
       await setDoc(doc(db, 'users', firebaseUser.uid), newStudentProfile);
+      // onAuthStateChanged will handle setting user and navigation
       toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
-      await fetchUsers(); // Refresh users list
+      await fetchUsers(); // Refresh allUsers state
     } catch (error: any) {
       console.error("Registration error", error);
       toast({ title: "Registration Failed", description: error.message || "Could not create account.", variant: "destructive" });
@@ -218,6 +224,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await signOut(auth);
+      setUser(null); // Explicitly set user to null
+      setAllUsers([]); // Clear all users on logout
+      setAllDepartments([]); // Clear departments
+      router.push('/login'); // Navigate to login
     } catch (error: any) {
       console.error("Logout error", error);
       toast({ title: "Logout Error", description: error.message || "Could not log out.", variant: "destructive" });
@@ -229,9 +239,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = async (updatedProfileData: Partial<UserProfile>, userIdToUpdate: string) => {
     try {
       const userDocRef = doc(db, 'users', userIdToUpdate);
+      // Ensure we don't try to write userID or password to the Firestore document directly from this partial update
       const { userID, password, ...safeUpdates } = updatedProfileData;
       await updateDoc(userDocRef, safeUpdates);
-      await fetchUsers();
+      await fetchUsers(); // Refresh allUsers state
+      // If the updated user is the currently logged-in user, update their local state
       if (user && user.userID === userIdToUpdate) {
         setUser(prev => prev ? ({ ...prev, ...safeUpdates }) : null);
       }
@@ -247,43 +259,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({ title: "Error", description: "Password is required for new users.", variant: "destructive" });
       return null;
     }
+    // Check if email already exists in Firestore users collection
     const usersQuery = query(collection(db, "users"), where("email", "==", newUserProfileData.email));
     const querySnapshot = await getDocs(usersQuery);
     if (!querySnapshot.empty) {
         toast({ title: "Creation Failed", description: "Email already exists in user profiles.", variant: "destructive" });
         return null;
     }
+
     let createdAuthUserUid: string | null = null;
-    const currentAuthUser = auth.currentUser;
+    // Temporarily store current auth state if an admin is creating a user
+    const currentAuthUser = auth.currentUser; 
+
     try {
+      // Create user in Firebase Auth
+      // This will sign out the current admin and sign in as the new user temporarily.
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
       createdAuthUserUid = tempUserCredential.user.uid;
+
+      // Create user profile in Firestore
       const finalProfileData: Omit<UserProfile, 'password'> = {
         ...newUserProfileData,
         userID: createdAuthUserUid,
+        // Add default qrCodeID and points if the role is student
         qrCodeID: newUserProfileData.role === 'student' ? 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4) : undefined,
         points: newUserProfileData.role === 'student' ? 0 : undefined,
       };
       await setDoc(doc(db, 'users', createdAuthUserUid), finalProfileData);
-      if (currentAuthUser && currentAuthUser.email && user?.password) {
-        // Simplified re-login attempt, may require manual re-login for admin
-         await signOut(auth); // Sign out the newly created user
-        // Attempt to re-sign in the admin; this is complex client-side
+
+      // Attempt to re-authenticate the admin if one was logged in
+      // This is a simplified re-login. Real-world scenarios might need more robust handling or admin SDK.
+      if (currentAuthUser && currentAuthUser.email && user?.password) { 
+        await signOut(auth); // Sign out the newly created user
+        // Attempt to re-sign in the admin. This requires the admin's password.
+        // For this prototype, we assume 'user.password' holds the admin's current password,
+        // which is NOT secure and generally unavailable client-side.
+        // A better approach for admin user creation uses Firebase Admin SDK on a backend.
+        // For now, admin might need to log in again manually if this fails.
+        try {
+            await signInWithEmailAndPassword(auth, currentAuthUser.email, user.password);
+        } catch (reauthError) {
+            console.warn("Admin re-authentication failed after creating user. Admin may need to log in again.", reauthError);
+            // router.push('/login'); // Or force admin to login page
+        }
       }
-      await fetchUsers();
+
+      await fetchUsers(); // Refresh allUsers state
       toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
       return createdAuthUserUid;
-    } catch (error: any)
+    } catch (error: any) {
       console.error("Error creating user (Auth/Firestore):", error);
       toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
-      if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
+      // If Auth user was created but Firestore profile failed, it's an orphaned Auth account.
+      if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') { // Check it's not just an email-exists error from Auth
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
+          // Consider deleting the orphaned auth user here if possible, though client-side deletion of other users is restricted.
       }
       return null;
     }
   };
 
   const deleteUserAuth = async (userId: string): Promise<{success: boolean, message: string}> => {
+    // Client-side deletion of *other* users' Auth accounts is not typically allowed for security.
+    // This would usually be handled by a backend function with Admin SDK privileges.
     toast({ title: "Action Required", description: "Deleting users from Firebase Authentication must be done via the Firebase Console or a backend function for security reasons in this prototype.", variant: "default" });
     return { success: false, message: "Manual deletion from Firebase Auth required." };
   };
@@ -291,7 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const deleteUserProfile = async (userId: string) => {
     try {
       await deleteDoc(doc(db, 'users', userId));
-      await fetchUsers();
+      await fetchUsers(); // Refresh allUsers state
       toast({ title: "Success", description: "User profile deleted from Firestore." });
     } catch (error: any) {
       console.error("Error deleting user profile:", error);
@@ -304,6 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!firebaseUser || !firebaseUser.email) {
       return { success: false, message: "No user logged in or email not found." };
     }
+
     try {
       const credential = EmailAuthProvider.credential(firebaseUser.email, currentPasswordAttempt);
       await reauthenticateWithCredential(firebaseUser, credential);
@@ -398,7 +437,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fullName,
         role: 'oic',
      };
-     const newOicId = await addUser(oicProfile, "password123");
+     const newOicId = await addUser(oicProfile, "password123"); // Using a default password
      if (newOicId) {
         return { success: true, message: "New OIC added." };
      }

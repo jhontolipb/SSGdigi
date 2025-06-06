@@ -6,9 +6,7 @@ import { Button } from "@/components/ui/button";
 import { QrCode, Download, Printer, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect } from "react"; // Added useState, useEffect
-// import { PredefinedDepartments } from "@/contexts/AuthContext"; // Removed
-
+import { useState, useEffect } from "react";
 
 export default function StudentQRCodePage() {
   const { user, allDepartments, fetchDepartments, loading: authLoading } = useAuth();
@@ -37,7 +35,7 @@ export default function StudentQRCodePage() {
     );
   }
 
-  if (!user || user.role !== 'student' || !user.qrCodeID) { // Changed from qrCodeId to qrCodeID
+  if (!user || user.role !== 'student' || !user.qrCodeID) {
     return (
       <Card className="shadow-lg">
         <CardHeader>
@@ -51,17 +49,17 @@ export default function StudentQRCodePage() {
   }
 
   const handleDownload = () => {
+    if (!user?.qrCodeID) return;
     const link = document.createElement('a');
-    link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(user.qrCodeID!)}&format=png`;
+    link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(user.qrCodeID)}&format=png`;
     link.download = `${user.fullName}_QRCode.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    // toast({ title: "Download Started", description: "QR Code download initiated." }); // Optional: use toast
   };
 
   const handlePrint = () => {
-    if (!user?.qrCodeID) return; // Guard clause
+    if (!user?.qrCodeID || !user.fullName) return;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(user.qrCodeID)}`;
     const printWindow = window.open('', '_blank');
     if (printWindow) {
@@ -87,7 +85,7 @@ export default function StudentQRCodePage() {
                             window.print();
                             // window.close(); // Optional: close window after print dialog
                         }
-                    </script>
+                    <\/script>
                 </body>
             </html>
         \`);
@@ -110,7 +108,7 @@ export default function StudentQRCodePage() {
         <CardContent className="text-center space-y-4">
           <div className="flex justify-center p-4 bg-muted/30 rounded-lg">
             <Image
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(user.qrCodeID)}`}
+              src={\`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=\${encodeURIComponent(user.qrCodeID)}\`}
               alt="Student QR Code"
               width={250}
               height={250}
@@ -139,5 +137,4 @@ export default function StudentQRCodePage() {
     </div>
   );
 }
-
     
