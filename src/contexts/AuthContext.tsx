@@ -1,8 +1,8 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord, ClearanceRequest, ApprovalStatus } from '@/types/user';
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import type { UserRole, UserProfile, Department, Club, Event, AttendanceRecord, ClearanceRequest, ApprovalStatus, MessageFirestore, ConversationFirestore } from '@/types/user';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db } from '@/lib/firebase';
@@ -33,6 +33,9 @@ import {
   DocumentData,
   orderBy,
   limit,
+  onSnapshot, // For real-time listeners
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -87,6 +90,15 @@ interface AuthContextType {
   updateClubClearanceStatus: (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => Promise<void>;
   updateDepartmentClearanceStatus: (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => Promise<void>;
 
+  // Messaging
+  conversationsList: ConversationFirestore[];
+  currentMessagesList: MessageFirestore[];
+  selectedConversationId: string | null;
+  setSelectedConversationId: (conversationId: string | null) => void;
+  listenForUserConversations: (userId: string) => () => void; // Returns unsubscribe function
+  listenForMessages: (conversationId: string) => () => void; // Returns unsubscribe function
+  sendMessageToConversation: (conversationId: string, messageText: string) => Promise<void>;
+  findOrCreateDirectConversation: (targetUserId: string) => Promise<string | null>; // Returns conversationId
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,12 +114,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [studentClearanceRequest, setStudentClearanceRequest] = useState<ClearanceRequest | null>(null);
   const [allClearanceRequests, setAllClearanceRequests] = useState<ClearanceRequest[]>([]);
 
+  // Messaging State
+  const [conversationsList, setConversationsList] = useState<ConversationFirestore[]>([]);
+  const [currentMessagesList, setCurrentMessagesList] = useState<MessageFirestore[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+
+
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
 
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const usersCollectionRef = collection(db, "users");
       const querySnapshot = await getDocs(usersCollectionRef);
@@ -117,9 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching all users:", error);
       toast({ title: "Error", description: "Could not load user data.", variant: "destructive" });
     }
-  };
+  }, [toast]);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       const departmentsCollectionRef = collection(db, "departments");
       const querySnapshot = await getDocs(departmentsCollectionRef);
@@ -132,9 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching departments:", error);
       toast({ title: "Error loading departments", description: (error as Error).message || "Could not load department data.", variant: "destructive" });
     }
-  };
+  }, [toast]);
 
-  const fetchClubs = async () => {
+  const fetchClubs = useCallback(async () => {
     try {
       const clubsCollectionRef = collection(db, "clubs");
       const querySnapshot = await getDocs(clubsCollectionRef);
@@ -147,9 +165,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching clubs:", error);
       toast({ title: "Error loading clubs", description: (error as Error).message || "Could not load club data.", variant: "destructive" });
     }
-  };
+  }, [toast]);
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const eventsCollectionRef = collection(db, "events");
       const q = query(eventsCollectionRef, orderBy("date", "desc"));
@@ -163,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching events:", error);
       toast({ title: "Error loading events", description: (error as Error).message || "Could not load event data.", variant: "destructive" });
     }
-  };
+  }, [toast]);
 
 
   useEffect(() => {
@@ -204,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // Removed individual fetch functions from deps to avoid re-triggering on their re-creation
 
   useEffect(() => {
     if (!loading && !user && !['/login', '/register'].includes(pathname)) {
@@ -248,8 +266,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
       const firebaseUser = userCredential.user;
-      
-      const dataForFirestore: Omit<UserProfile, 'password'> = {
+
+      const dataForFirestore: Partial<UserProfile> & { userID: string; email: string; fullName: string; role: UserRole, departmentID: string, qrCodeID: string, points: number } = {
         userID: firebaseUser.uid,
         email,
         fullName,
@@ -258,6 +276,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4),
         points: 0,
       };
+      // Remove undefined fields before sending to Firestore
+      Object.keys(dataForFirestore).forEach(key => (dataForFirestore as any)[key] === undefined && delete (dataForFirestore as any)[key]);
+
 
       await setDoc(doc(db, 'users', firebaseUser.uid), dataForFirestore);
       toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
@@ -282,8 +303,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentEventAttendance([]);
       setStudentClearanceRequest(null);
       setAllClearanceRequests([]);
+      setConversationsList([]);
+      setCurrentMessagesList([]);
+      setSelectedConversationId(null);
       router.push('/login');
-    } catch (error: any) {
+    } catch (error: any) { // Added opening brace for catch block
       console.error("Logout error", error);
       toast({ title: "Logout Error", description: error.message || "Could not log out.", variant: "destructive" });
     } finally {
@@ -298,17 +322,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const finalUpdates: Partial<UserProfile> = { ...safeUpdates };
       
-      if (safeUpdates.clubID === "" || safeUpdates.clubID === null) finalUpdates.clubID = undefined;
-      else if (safeUpdates.clubID) finalUpdates.clubID = safeUpdates.clubID;
-      else delete finalUpdates.clubID;
+      if ('clubID' in safeUpdates) finalUpdates.clubID = safeUpdates.clubID && safeUpdates.clubID.trim() !== "" ? safeUpdates.clubID : undefined;
+      if ('departmentID' in safeUpdates) finalUpdates.departmentID = safeUpdates.departmentID && safeUpdates.departmentID.trim() !== "" ? safeUpdates.departmentID : undefined;
+      if ('assignedClubId' in safeUpdates) finalUpdates.assignedClubId = safeUpdates.assignedClubId && safeUpdates.assignedClubId.trim() !== "" ? safeUpdates.assignedClubId : undefined;
 
-      if (safeUpdates.departmentID === "" || safeUpdates.departmentID === null) finalUpdates.departmentID = undefined;
-      else if (safeUpdates.departmentID) finalUpdates.departmentID = safeUpdates.departmentID;
-      else delete finalUpdates.departmentID;
-      
-      if (safeUpdates.assignedClubId === "" || safeUpdates.assignedClubId === null) finalUpdates.assignedClubId = undefined;
-      else if (safeUpdates.assignedClubId) finalUpdates.assignedClubId = safeUpdates.assignedClubId;
-      else delete finalUpdates.assignedClubId;
+      // Remove undefined fields before sending to Firestore
+      Object.keys(finalUpdates).forEach(key => (finalUpdates as any)[key] === undefined && delete (finalUpdates as any)[key]);
+
 
       await updateDoc(userDocRef, finalUpdates);
       await fetchUsers();
@@ -336,8 +356,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let createdAuthUserUid: string | null = null;
     const currentAuthUser = auth.currentUser;
-    const adminEmail = user?.email; 
-    const adminPasswordAttempt = user?.password; 
+    const adminEmail = user?.email;
+    const adminPasswordAttempt = user?.password; // This will be undefined; admin password isn't stored in context
 
 
     try {
@@ -365,21 +385,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         dataForFirestore.qrCodeID = 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4);
         dataForFirestore.points = 0;
       }
+      
+      // Remove undefined fields before sending to Firestore
+      Object.keys(dataForFirestore).forEach(key => (dataForFirestore as any)[key] === undefined && delete (dataForFirestore as any)[key]);
 
 
       await setDoc(doc(db, 'users', createdAuthUserUid), dataForFirestore);
 
-      if (currentAuthUser && adminEmail && adminPasswordAttempt) { // Re-authenticate admin
-        await signOut(auth); 
-        try {
-            await signInWithEmailAndPassword(auth, adminEmail, adminPasswordAttempt);
-            // Re-fetch admin's profile if necessary, or rely on onAuthStateChanged
-        } catch (reauthError) {
-            console.warn("Admin re-authentication failed after creating user. Admin may need to log in again.", reauthError);
-            // Optionally force admin to login page
-            // router.push('/login'); 
-        }
+      if (currentAuthUser && adminEmail) { // Re-auth only if admin was logged in. Password is not available here directly.
+        await signOut(auth); // Sign out the newly created user
+        // The admin will be redirected to login if their session was interrupted.
+        // Re-authenticating the admin here without prompting for password is not secure/feasible.
+        console.warn("Admin session might have been interrupted. Admin may need to log in again.");
       }
+
 
       await fetchUsers();
       toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
@@ -390,12 +409,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
-      if (!auth.currentUser && currentAuthUser && adminEmail && adminPasswordAttempt) { // Final re-auth attempt
-        try {
-            await signInWithEmailAndPassword(auth, adminEmail, adminPasswordAttempt);
-        } catch (finalReauthError) {
-            console.warn("Final admin re-authentication attempt failed.", finalReauthError);
-        }
+      if (!auth.currentUser && currentAuthUser && adminEmail ) { 
+         console.warn("Admin session might have been interrupted. Admin may need to log in again.");
       }
       return null;
     }
@@ -428,11 +443,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reauthenticateWithCredential(firebaseUser, credential);
       await firebaseUpdatePassword(firebaseUser, newPassword);
       toast({ title: "Success", description: "Password updated successfully." });
-      if (user && user.userID === firebaseUser.uid) {
-        // Note: Storing password in user state is not recommended for security.
-        // This is a placeholder for if you were directly managing it, which we are not.
-        // setUser(prev => prev ? ({...prev, password: newPassword}) : null);
-      }
       return { success: true, message: "Password updated successfully." };
     } catch (error: any) {
       console.error("Password change error", error);
@@ -494,13 +504,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (clubData.description && clubData.description.trim() !== "") {
         dataToSave.description = clubData.description;
       } else {
-        dataToSave.description = undefined;
+        dataToSave.description = undefined; // Explicitly undefined for Firestore
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToSave.departmentId = clubData.departmentId;
       } else {
-        dataToSave.departmentId = undefined;
+        dataToSave.departmentId = undefined; // Explicitly undefined
       }
+      // Remove undefined fields before sending to Firestore
+      Object.keys(dataToSave).forEach(key => (dataToSave as any)[key] === undefined && delete (dataToSave as any)[key]);
+
 
       const docRef = await addDoc(clubColRef, dataToSave);
       await fetchClubs();
@@ -520,13 +533,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (clubData.description && clubData.description.trim() !== "") {
         dataToUpdate.description = clubData.description;
       } else {
-        dataToUpdate.description = undefined; 
+        dataToUpdate.description = undefined; // Explicitly undefined
       }
       if (clubData.departmentId && clubData.departmentId.trim() !== "") {
         dataToUpdate.departmentId = clubData.departmentId;
       } else {
-        dataToUpdate.departmentId = undefined; 
+        dataToUpdate.departmentId = undefined; // Explicitly undefined
       }
+
+      // Remove undefined fields before sending to Firestore
+      Object.keys(dataToUpdate).forEach(key => (dataToUpdate as any)[key] === undefined && delete (dataToUpdate as any)[key]);
 
       await updateDoc(clubDocRef, dataToUpdate);
       await fetchClubs();
@@ -565,6 +581,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addEventToFirestore = async (eventData: Omit<Event, 'id'>): Promise<string | null> => {
     try {
       const eventColRef = collection(db, "events");
+      // Remove undefined fields before sending to Firestore
+      Object.keys(eventData).forEach(key => (eventData as any)[key] === undefined && delete (eventData as any)[key]);
+
       const docRef = await addDoc(eventColRef, eventData);
       await fetchEvents();
       toast({ title: "Event Added", description: `${eventData.name} created successfully.`});
@@ -579,6 +598,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateEventInFirestore = async (eventId: string, eventData: Omit<Event, 'id'>) => {
     try {
       const eventDocRef = doc(db, "events", eventId);
+      // Remove undefined fields before sending to Firestore
+      Object.keys(eventData).forEach(key => (eventData as any)[key] === undefined && delete (eventData as any)[key]);
+
       await updateDoc(eventDocRef, eventData);
       await fetchEvents();
       toast({ title: "Event Updated", description: `${eventData.name} updated successfully.`});
@@ -626,7 +648,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const attendanceQuery = query(
         collection(db, "attendanceRecords"),
         where("eventID", "==", eventId),
-        orderBy("timestamp", "asc") 
+        orderBy("timestamp", "asc")
       );
       const querySnapshot = await getDocs(attendanceQuery);
       const records = querySnapshot.docs.map(docSnap => ({
@@ -643,14 +665,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
   const addAttendanceRecord = async (recordData: Omit<AttendanceRecord, 'id'>): Promise<string | null> => {
+    if (!user) {
+      toast({ title: "Error", description: "User not logged in.", variant: "destructive" });
+      return null;
+    }
     try {
       const attendanceColRef = collection(db, "attendanceRecords");
-      const docRef = await addDoc(attendanceColRef, {
+      const fullRecordData = {
         ...recordData,
-        timestamp: serverTimestamp() 
-      });
+        scannedByOICUserID: user.userID, // Ensure OIC ID is set
+        timestamp: serverTimestamp()
+      };
+      // Remove undefined fields before sending to Firestore
+      Object.keys(fullRecordData).forEach(key => (fullRecordData as any)[key] === undefined && delete (fullRecordData as any)[key]);
+
+      const docRef = await addDoc(attendanceColRef, fullRecordData);
       toast({ title: "Attendance Recorded", description: `Student ${recordData.studentUserID} marked ${recordData.status}.`});
-      if (recordData.eventID === (allEvents.find(e => e.id === recordData.eventID)?.id)) { 
+      if (recordData.eventID === (allEvents.find(e => e.id === recordData.eventID)?.id)) {
          await fetchAttendanceRecordsForEvent(recordData.eventID);
       }
       return docRef.id;
@@ -664,13 +695,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateAttendanceRecord = async (recordId: string, updates: Partial<AttendanceRecord>) => {
     try {
       const attendanceDocRef = doc(db, "attendanceRecords", recordId);
-      await updateDoc(attendanceDocRef, {
+      const updatesWithTimestamp = {
         ...updates,
-        timestamp: serverTimestamp() 
-      });
+        timestamp: serverTimestamp()
+      };
+       // Remove undefined fields before sending to Firestore
+      Object.keys(updatesWithTimestamp).forEach(key => (updatesWithTimestamp as any)[key] === undefined && delete (updatesWithTimestamp as any)[key]);
+
+      await updateDoc(attendanceDocRef, updatesWithTimestamp);
       toast({ title: "Attendance Updated", description: `Record ${recordId} updated.`});
-      if (updates.eventID) { 
-        await fetchAttendanceRecordsForEvent(updates.eventID);
+      const record = await getDoc(attendanceDocRef);
+      if (record.exists() && record.data().eventID) {
+        await fetchAttendanceRecordsForEvent(record.data().eventID);
       }
     } catch (error: any) {
       console.error("Error updating attendance record:", error);
@@ -689,7 +725,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
       if (!querySnapshot.empty) {
         const docSnap = querySnapshot.docs[0];
-        return { id: docSnap.id, ...docSnap.data() } as AttendanceRecord;
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            ...data,
+            timeIn: data.timeIn || null,
+            timeOut: data.timeOut || null,
+         } as AttendanceRecord;
       }
       return null;
     } catch (error) {
@@ -699,7 +741,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // --- Clearance Request Functions ---
   const initiateClearanceRequest = async () => {
     if (!user || user.role !== 'student') {
       toast({ title: "Error", description: "Only students can initiate clearance requests.", variant: "destructive" });
@@ -726,10 +767,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ssgStatus: 'pending',
       overallStatus: 'Pending',
     };
+    // Remove undefined fields
+    Object.keys(newRequestData).forEach(key => (newRequestData as any)[key] === undefined && delete (newRequestData as any)[key]);
+
 
     try {
       const docRef = await addDoc(collection(db, "clearanceRequests"), newRequestData);
-      setStudentClearanceRequest({ ...newRequestData, id: docRef.id, requestedDate: new Date() }); // Optimistic update
+      setStudentClearanceRequest({ ...newRequestData, id: docRef.id, requestedDate: new Date() } as ClearanceRequest); // Optimistic update
       toast({ title: "Success", description: "Clearance request initiated." });
     } catch (error: any) {
       console.error("Error initiating clearance request:", error);
@@ -749,9 +793,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!querySnapshot.empty) {
         const docSnap = querySnapshot.docs[0];
         const requestData = { id: docSnap.id, ...docSnap.data() } as ClearanceRequest;
-        // Convert Firestore Timestamps to JS Date objects if necessary
-        if (requestData.requestedDate && requestData.requestedDate.toDate) {
-            requestData.requestedDate = requestData.requestedDate.toDate().toLocaleDateString();
+        if (requestData.requestedDate && (requestData.requestedDate as Timestamp).toDate) {
+            requestData.requestedDate = (requestData.requestedDate as Timestamp).toDate().toLocaleDateString();
         }
         setStudentClearanceRequest(requestData);
       } else {
@@ -762,7 +805,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStudentClearanceRequest(null);
     }
   };
-  
+
   const fetchAllClearanceRequests = async () => {
     try {
       const q = query(collection(db, "clearanceRequests"), orderBy("requestedDate", "desc"));
@@ -795,11 +838,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         [`${stage}ApprovalStatus`]: status,
         [`${stage}ApproverID`]: approverId,
         [`${stage}ApprovalDate`]: serverTimestamp(),
-        [`${stage}ApprovalNotes`]: notes || undefined, // Use undefined to remove field if notes are empty
+        [`${stage}ApprovalNotes`]: notes && notes.trim() !== "" ? notes : undefined,
     };
 
-    // Logic to determine overall status
-    const currentRequest = allClearanceRequests.find(r => r.id === requestId) || 
+    const currentRequest = allClearanceRequests.find(r => r.id === requestId) ||
                            (studentClearanceRequest?.id === requestId ? studentClearanceRequest : null);
 
     if (currentRequest) {
@@ -807,32 +849,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let overall: ClearanceRequest['overallStatus'] = 'Pending';
         if (status === 'rejected') {
             overall = 'Rejected';
-            updates.ssgStatus = 'rejected'; // If any stage rejects, SSG is implicitly rejected
+             // If any stage rejects, SSG is also marked as rejected if it was pending
+            if (tempUpdatedRequest.ssgStatus === 'pending' || stage === 'ssg') {
+                 updates.ssgStatus = 'rejected';
+                 if (stage !== 'ssg') updates.ssgApprovalNotes = `Auto-rejected due to ${stage} rejection.`;
+            }
         } else if (
             (tempUpdatedRequest.clubApprovalStatus === 'approved' || tempUpdatedRequest.clubApprovalStatus === 'not_applicable') &&
             tempUpdatedRequest.departmentApprovalStatus === 'approved' &&
-            (stage === 'ssg' && status === 'approved') // Only if SSG is approving now
+            tempUpdatedRequest.ssgStatus === 'approved'
         ) {
             overall = 'Approved';
-            updates.unifiedClearanceID = `UC-${new Date().getFullYear()}-${requestId.substring(0, 4)}`;
-        } else if (
-            (tempUpdatedRequest.clubApprovalStatus === 'approved' || tempUpdatedRequest.clubApprovalStatus === 'not_applicable') &&
-            tempUpdatedRequest.departmentApprovalStatus === 'approved' &&
-            tempUpdatedRequest.ssgStatus === 'approved' // if SSG was already approved (e.g. an earlier stage is re-approved)
-        ) {
-             overall = 'Approved'; // Stays approved
+            if (!tempUpdatedRequest.unifiedClearanceID) {
+                updates.unifiedClearanceID = `UC-${new Date().getFullYear()}-${requestId.substring(0, 4).toUpperCase()}`;
+            }
         }
         updates.overallStatus = overall;
     }
+     // Remove undefined fields
+    Object.keys(updates).forEach(key => (updates as any)[key] === undefined && delete (updates as any)[key]);
 
 
     try {
-        await updateDoc(clearanceDocRef, updates as DocumentData); // Cast to DocumentData for Firestore
+        await updateDoc(clearanceDocRef, updates as DocumentData);
         toast({ title: "Success", description: `Clearance request ${stage} stage updated to ${status}.` });
         if (user.role === 'student') {
             await fetchStudentClearanceRequest(user.userID);
         } else {
-            await fetchAllClearanceRequests(); // For admins
+            await fetchAllClearanceRequests();
         }
     } catch (error: any) {
         console.error(`Error updating ${stage} clearance status:`, error);
@@ -848,6 +892,140 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   const updateDepartmentClearanceStatus = (requestId: string, status: ApprovalStatus, approverId: string, notes?: string) => {
       return updateClearanceStageStatus(requestId, 'department', status, approverId, notes);
+  };
+
+  // --- Messaging Functions ---
+  const listenForUserConversations = useCallback((userId: string) => {
+    const q = query(
+      collection(db, "conversations"),
+      where("participantUIDs", "array-contains", userId),
+      orderBy("lastMessageTimestamp", "desc")
+    );
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const convos = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          lastMessageTimestamp: data.lastMessageTimestamp ? (data.lastMessageTimestamp as Timestamp).toDate() : new Date(0),
+          createdAt: data.createdAt ? (data.createdAt as Timestamp).toDate() : new Date(0),
+        } as ConversationFirestore;
+      });
+      setConversationsList(convos);
+    }, (error) => {
+      console.error("Error listening to conversations:", error);
+      toast({ title: "Messaging Error", description: "Could not load conversations.", variant: "destructive" });
+    });
+    return unsubscribe;
+  }, [toast]);
+
+  const listenForMessages = useCallback((conversationId: string) => {
+    if (!conversationId) {
+      setCurrentMessagesList([]);
+      return () => {}; // Return an empty unsubscribe function
+    }
+    const messagesColRef = collection(db, "conversations", conversationId, "messages");
+    const q = query(messagesColRef, orderBy("timestamp", "asc"));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const msgs = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          timestamp: data.timestamp ? (data.timestamp as Timestamp).toDate() : new Date(),
+        } as MessageFirestore;
+      });
+      setCurrentMessagesList(msgs);
+    }, (error) => {
+      console.error("Error listening to messages:", error);
+      toast({ title: "Messaging Error", description: "Could not load messages for this conversation.", variant: "destructive" });
+    });
+    return unsubscribe;
+  }, [toast]);
+
+  const sendMessageToConversation = async (conversationId: string, messageText: string) => {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in to send messages.", variant: "destructive" });
+      return;
+    }
+    if (!messageText.trim()) return;
+
+    const conversationDocRef = doc(db, "conversations", conversationId);
+    const messagesColRef = collection(conversationDocRef, "messages");
+
+    try {
+      const newMessage: Omit<MessageFirestore, 'id' | 'timestamp' | 'conversationId'> = {
+        senderId: user.userID,
+        senderName: user.fullName,
+        text: messageText.trim(),
+      };
+      await addDoc(messagesColRef, { ...newMessage, timestamp: serverTimestamp() });
+
+      // Update conversation's last message details
+      await updateDoc(conversationDocRef, {
+        lastMessageText: messageText.trim(),
+        lastMessageTimestamp: serverTimestamp(),
+        lastMessageSenderId: user.userID,
+        // TODO: Increment unread counts for other participants
+      });
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      toast({ title: "Message Error", description: error.message || "Could not send message.", variant: "destructive" });
+    }
+  };
+
+  const findOrCreateDirectConversation = async (targetUserId: string): Promise<string | null> => {
+    if (!user || user.userID === targetUserId) {
+      toast({ title: "Error", description: "Cannot create conversation with yourself or user not found.", variant: "destructive" });
+      return null;
+    }
+
+    const participantUIDs = [user.userID, targetUserId].sort(); // Sort to ensure consistent query
+
+    const q = query(
+      collection(db, "conversations"),
+      where("type", "==", "direct"),
+      where("participantUIDs", "==", participantUIDs) // Exact match on sorted array
+    );
+
+    try {
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        // Conversation already exists
+        const existingConvoId = querySnapshot.docs[0].id;
+        setSelectedConversationId(existingConvoId); // Auto-select it
+        return existingConvoId;
+      } else {
+        // Create new conversation
+        const targetUserDoc = allUsers.find(u => u.userID === targetUserId);
+        if (!targetUserDoc) {
+            toast({title: "Error", description: "Target user profile not found.", variant: "destructive"});
+            return null;
+        }
+
+        const newConversationData: Omit<ConversationFirestore, 'id'> = {
+          participantUIDs,
+          participantInfo: {
+            [user.userID]: { fullName: user.fullName }, // avatarSeed can be added if available
+            [targetUserId]: { fullName: targetUserDoc.fullName }, // avatarSeed for target user
+          },
+          type: 'direct',
+          lastMessageTimestamp: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        };
+        // Remove undefined fields
+        Object.keys(newConversationData).forEach(key => (newConversationData as any)[key] === undefined && delete (newConversationData as any)[key]);
+
+        const docRef = await addDoc(collection(db, "conversations"), newConversationData);
+        setSelectedConversationId(docRef.id); // Auto-select new conversation
+        return docRef.id;
+      }
+    } catch (error: any) {
+      console.error("Error finding or creating conversation:", error);
+      toast({ title: "Conversation Error", description: error.message || "Could not start conversation.", variant: "destructive" });
+      return null;
+    }
   };
 
 
@@ -895,6 +1073,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateSsgClearanceStatus,
         updateClubClearanceStatus,
         updateDepartmentClearanceStatus,
+        // Messaging
+        conversationsList,
+        currentMessagesList,
+        selectedConversationId,
+        setSelectedConversationId,
+        listenForUserConversations,
+        listenForMessages,
+        sendMessageToConversation,
+        findOrCreateDirectConversation,
     }}>
       {children}
     </AuthContext.Provider>
