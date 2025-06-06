@@ -5,7 +5,7 @@ import type { UserRole, UserProfile, Department, Club, Event } from '@/types/use
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase'; 
+import { auth, db } from '@/lib/firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -26,6 +26,7 @@ import {
   query,
   where,
   addDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -55,9 +56,10 @@ interface AuthContextType {
   deleteClub: (clubId: string) => Promise<void>;
 
   allEvents: Event[];
-  addEvent: (newEvent: Event) => void;
-  updateEvent: (updatedEvent: Event) => void;
-  deleteEvent: (eventId: string) => void;
+  fetchEvents: () => Promise<void>;
+  addEventToFirestore: (eventData: Omit<Event, 'id'>) => Promise<string | null>;
+  updateEventInFirestore: (eventId: string, eventData: Omit<Event, 'id'>) => Promise<void>;
+  deleteEventFromFirestore: (eventId: string) => Promise<void>;
 
   updateUserClub: (userId: string, clubId: string | null) => void;
   addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
@@ -65,15 +67,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const initialMockEvents: Event[] = [];
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [allDepartments, setAllDepartments] = useState<Department[]>([]);
   const [allClubs, setAllClubs] = useState<Club[]>([]);
-  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents);
+  const [allEvents, setAllEvents] = useState<Event[]>([]);
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
@@ -121,6 +121,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const fetchEvents = async () => {
+    try {
+      const eventsCollectionRef = collection(db, "events");
+      const querySnapshot = await getDocs(eventsCollectionRef);
+      const eventsList = querySnapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      } as Event));
+      setAllEvents(eventsList);
+    } catch (error) {
+      console.error("Error fetching events:", error);
+      toast({ title: "Error loading events", description: (error as Error).message || "Could not load event data.", variant: "destructive" });
+    }
+  };
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -137,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } catch (error) {
             console.error("Error fetching user profile from Firestore:", error);
-            setUser(null); 
+            setUser(null);
         }
       } else {
         setUser(null);
@@ -148,14 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchUsers();
     fetchDepartments();
     fetchClubs();
-
-    const storedEvents = localStorage.getItem('campusConnectEvents');
-    if (storedEvents) {
-        try {
-            const parsedEvents = JSON.parse(storedEvents);
-            if (Array.isArray(parsedEvents)) setAllEvents(parsedEvents);
-        } catch(e) { console.error("Failed to parse events from LS", e); }
-    }
+    fetchEvents();
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,7 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             case 'department_admin': router.push('/department-admin/dashboard'); break;
             case 'oic': router.push('/oic/events'); break;
             case 'student': router.push('/student/dashboard'); break;
-            default: router.push('/login'); 
+            default: router.push('/login');
         }
     }
   }, [user, loading, pathname, router]);
@@ -209,12 +217,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fullName,
         role: 'student',
         departmentID: departmentId,
-        qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4), 
+        qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4),
         points: 0,
       };
       await setDoc(doc(db, 'users', firebaseUser.uid), newStudentProfile);
       toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
-      await fetchUsers(); 
+      await fetchUsers();
     } catch (error: any) {
       console.error("Registration error", error);
       toast({ title: "Registration Failed", description: error.message || "Could not create account.", variant: "destructive" });
@@ -227,11 +235,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await signOut(auth);
-      setUser(null); 
-      setAllUsers([]); 
-      setAllDepartments([]); 
+      setUser(null);
+      setAllUsers([]);
+      setAllDepartments([]);
       setAllClubs([]);
-      router.push('/login'); 
+      setAllEvents([]);
+      router.push('/login');
     } catch (error: any) {
       console.error("Logout error", error);
       toast({ title: "Logout Error", description: error.message || "Could not log out.", variant: "destructive" });
@@ -244,15 +253,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userDocRef = doc(db, 'users', userIdToUpdate);
       const { userID, password, ...safeUpdates } = updatedProfileData;
-      
-      // Sanitize optional fields: if an empty string is passed for an optional ID field, convert to undefined
+
       const finalUpdates: Partial<UserProfile> = { ...safeUpdates };
       if (safeUpdates.clubID === "") finalUpdates.clubID = undefined;
       if (safeUpdates.departmentID === "") finalUpdates.departmentID = undefined;
       if (safeUpdates.assignedClubId === "") finalUpdates.assignedClubId = undefined;
 
       await updateDoc(userDocRef, finalUpdates);
-      await fetchUsers(); 
+      await fetchUsers();
       if (user && user.userID === userIdToUpdate) {
         setUser(prev => prev ? ({ ...prev, ...finalUpdates }) : null);
       }
@@ -276,7 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let createdAuthUserUid: string | null = null;
-    const currentAuthUser = auth.currentUser; 
+    const currentAuthUser = auth.currentUser;
 
     try {
       const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
@@ -293,8 +301,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       await setDoc(doc(db, 'users', createdAuthUserUid), finalProfileData);
 
-      if (currentAuthUser && currentAuthUser.email && user?.password) { 
-        await signOut(auth); 
+      if (currentAuthUser && currentAuthUser.email && user?.password) {
+        await signOut(auth);
         try {
             await signInWithEmailAndPassword(auth, currentAuthUser.email, user.password);
         } catch (reauthError) {
@@ -302,13 +310,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      await fetchUsers(); 
+      await fetchUsers();
       toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
       return createdAuthUserUid;
     } catch (error: any) {
       console.error("Error creating user (Auth/Firestore):", error);
       toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
-      if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') { 
+      if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
           console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
       }
       return null;
@@ -323,7 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const deleteUserProfile = async (userId: string) => {
     try {
       await deleteDoc(doc(db, 'users', userId));
-      await fetchUsers(); 
+      await fetchUsers();
       toast({ title: "Success", description: "User profile deleted from Firestore." });
     } catch (error: any) {
       console.error("Error deleting user profile:", error);
@@ -360,7 +368,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const deptColRef = collection(db, "departments");
       const docRef = await addDoc(deptColRef, { name: departmentName });
-      await fetchDepartments(); 
+      await fetchDepartments();
       toast({ title: "Department Added", description: `${departmentName} created successfully.`});
       return docRef.id;
     } catch (error: any) {
@@ -374,7 +382,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const deptDocRef = doc(db, "departments", departmentId);
       await updateDoc(deptDocRef, { name: departmentName });
-      await fetchDepartments(); 
+      await fetchDepartments();
       toast({ title: "Department Updated", description: `Department updated to ${departmentName}.`});
     } catch (error: any) {
       console.error("Error updating department:", error);
@@ -386,7 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const deptDocRef = doc(db, "departments", departmentId);
       await deleteDoc(deptDocRef);
-      await fetchDepartments(); 
+      await fetchDepartments();
       toast({ title: "Department Deleted", description: `Department removed successfully.`});
     } catch (error: any) {
       console.error("Error deleting department:", error);
@@ -408,12 +416,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const docRef = await addDoc(clubColRef, dataToSave);
-      await fetchClubs(); 
+      await fetchClubs();
       toast({ title: "Club Added", description: `${clubData.name} created successfully.`});
       return docRef.id;
     } catch (error: any) {
-      console.error("Error adding club to Firestore:", error); 
-      toast({ title: "Error Adding Club", description: `Failed to save club: ${error.message || "Unknown Firestore error."}`, variant: "destructive" });
+      console.error("Error adding club to Firestore:", error);
+      toast({ title: "Error Adding Club", description: `Failed to save club: ${(error as Error).message || "Unknown Firestore error."}`, variant: "destructive" });
       return null;
     }
   };
@@ -421,77 +429,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateClub = async (clubId: string, clubData: Omit<Club, 'id'>) => {
     try {
       const clubDocRef = doc(db, "clubs", clubId);
-      const dataToUpdate: { name: string; description?: string; departmentId?: string } = {
-        name: clubData.name,
-      };
-      if (clubData.description && clubData.description.trim() !== "") {
-        dataToUpdate.description = clubData.description;
-      } else {
-        dataToUpdate.description = undefined; // Explicitly set to undefined to remove if empty
-      }
-      if (clubData.departmentId && clubData.departmentId.trim() !== "") {
-        dataToUpdate.departmentId = clubData.departmentId;
-      } else {
-        dataToUpdate.departmentId = undefined; // Explicitly set to undefined to remove if empty
-      }
+      const dataToUpdate: Partial<Club> = { name: clubData.name };
+      dataToUpdate.description = clubData.description && clubData.description.trim() !== "" ? clubData.description : undefined;
+      dataToUpdate.departmentId = clubData.departmentId && clubData.departmentId.trim() !== "" ? clubData.departmentId : undefined;
+
       await updateDoc(clubDocRef, dataToUpdate);
-      await fetchClubs(); 
+      await fetchClubs();
       toast({ title: "Club Updated", description: `${clubData.name} updated successfully.`});
     } catch (error: any) {
       console.error("Error updating club:", error);
-      toast({ title: "Error Updating Club", description: error.message || "Could not update club.", variant: "destructive" });
+      toast({ title: "Error Updating Club", description: (error as Error).message || "Could not update club.", variant: "destructive" });
     }
   };
 
   const deleteClub = async (clubId: string) => {
     try {
-      // Before deleting a club, unassign it from any users (club admins or members)
+      const batch = writeBatch(db);
       const usersToUpdateQuery = query(collection(db, "users"), where("clubID", "==", clubId));
       const usersSnapshot = await getDocs(usersToUpdateQuery);
-      const batchUpdates = usersSnapshot.docs.map(userDoc => updateDoc(userDoc.ref, { clubID: undefined }));
-      await Promise.all(batchUpdates);
+      usersSnapshot.docs.forEach(userDoc => batch.update(userDoc.ref, { clubID: undefined }));
 
-      // Unassign from OICs if assignedClubId matches
       const oicsToUpdateQuery = query(collection(db, "users"), where("assignedClubId", "==", clubId));
       const oicsSnapshot = await getDocs(oicsToUpdateQuery);
-      const oicBatchUpdates = oicsSnapshot.docs.map(userDoc => updateDoc(userDoc.ref, { assignedClubId: undefined }));
-      await Promise.all(oicBatchUpdates);
-
+      oicsSnapshot.docs.forEach(userDoc => batch.update(userDoc.ref, { assignedClubId: undefined }));
 
       const clubDocRef = doc(db, "clubs", clubId);
-      await deleteDoc(clubDocRef);
-      
-      await fetchClubs(); 
-      await fetchUsers(); // Refresh users as their clubID might have changed
+      batch.delete(clubDocRef);
+
+      await batch.commit();
+
+      await fetchClubs();
+      await fetchUsers();
       toast({ title: "Club Deleted", description: `Club removed successfully.`});
     } catch (error: any) {
       console.error("Error deleting club:", error);
-      toast({ title: "Error Deleting Club", description: error.message || "Could not delete club.", variant: "destructive" });
+      toast({ title: "Error Deleting Club", description: (error as Error).message || "Could not delete club.", variant: "destructive" });
     }
   };
 
+  const addEventToFirestore = async (eventData: Omit<Event, 'id'>): Promise<string | null> => {
+    try {
+      const eventColRef = collection(db, "events");
+      const docRef = await addDoc(eventColRef, eventData);
+      await fetchEvents();
+      toast({ title: "Event Added", description: `${eventData.name} created successfully.`});
+      return docRef.id;
+    } catch (error: any) {
+      console.error("Error adding event to Firestore:", error);
+      toast({ title: "Error Adding Event", description: `Failed to save event: ${(error as Error).message || "Unknown Firestore error."}`, variant: "destructive" });
+      return null;
+    }
+  };
 
-  const addEvent = (newEvent: Event) => {
-    setAllEvents(prevEvents => {
-        const updatedEvents = [...prevEvents, newEvent];
-        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
-        return updatedEvents;
-    });
+  const updateEventInFirestore = async (eventId: string, eventData: Omit<Event, 'id'>) => {
+    try {
+      const eventDocRef = doc(db, "events", eventId);
+      await updateDoc(eventDocRef, eventData);
+      await fetchEvents();
+      toast({ title: "Event Updated", description: `${eventData.name} updated successfully.`});
+    } catch (error: any) {
+      console.error("Error updating event:", error);
+      toast({ title: "Error Updating Event", description: (error as Error).message || "Could not update event.", variant: "destructive" });
+    }
   };
-  const updateEvent = (updatedEvent: Event) => {
-    setAllEvents(prevEvents => {
-        const updatedEvents = prevEvents.map(event => event.id === updatedEvent.id ? updatedEvent : event);
-        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
-        return updatedEvents;
-    });
+
+  const deleteEventFromFirestore = async (eventId: string) => {
+    try {
+      const eventDocRef = doc(db, "events", eventId);
+      await deleteDoc(eventDocRef);
+      await fetchEvents();
+      toast({ title: "Event Deleted", description: `Event removed successfully.`});
+    } catch (error: any) {
+      console.error("Error deleting event:", error);
+      toast({ title: "Error Deleting Event", description: (error as Error).message || "Could not delete event.", variant: "destructive" });
+    }
   };
-  const deleteEvent = (eventId: string) => {
-    setAllEvents(prevEvents => {
-        const updatedEvents = prevEvents.filter(event => event.id !== eventId);
-        localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
-        return updatedEvents;
-    });
-  };
+
 
   const updateUserClub = async (userId: string, clubId: string | null) => {
     await updateUser({ clubID: clubId || undefined }, userId);
@@ -502,7 +515,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fullName,
         role: 'oic',
      };
-     const newOicId = await addUser(oicProfile, "password123"); 
+     const newOicId = await addUser(oicProfile, "password123");
      if (newOicId) {
         return { success: true, message: "New OIC added." };
      }
@@ -535,9 +548,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateClub,
         deleteClub,
         allEvents,
-        addEvent,
-        updateEvent,
-        deleteEvent,
+        fetchEvents,
+        addEventToFirestore,
+        updateEventInFirestore,
+        deleteEventFromFirestore,
         updateUserClub,
         addNewOIC,
     }}>
@@ -553,5 +567,3 @@ export function useAuth() {
   }
   return context;
 }
-
-export const PredefinedClubs = []; // Removed mock data

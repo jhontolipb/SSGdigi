@@ -1,9 +1,9 @@
 
 "use client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
+import { Users, CalendarDays, ListChecks, MessageSquare, Loader2 } from 'lucide-react';
 import Link from "next/link";
-import { useAuth, PredefinedDepartments } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useEffect, useState } from 'react';
 
 interface DeptAdminStats {
@@ -22,7 +22,7 @@ const quickLinks = [
 
 
 export default function DepartmentAdminDashboardPage() {
-  const { user, allUsers, allEvents } = useAuth();
+  const { user, allUsers, allEvents, allDepartments, loading: authLoading } = useAuth();
   const [deptAdminStats, setDeptAdminStats] = useState<DeptAdminStats>({
     departmentStudents: 0,
     activeEvents: 0,
@@ -32,15 +32,15 @@ export default function DepartmentAdminDashboardPage() {
   const [departmentName, setDepartmentName] = useState("Department");
 
   useEffect(() => {
-    if (user && user.role === 'department_admin' && user.departmentID) {
-      const deptDetails = PredefinedDepartments.find(d => d.id === user.departmentID);
+    if (!authLoading && user && user.role === 'department_admin' && user.departmentID) {
+      const deptDetails = allDepartments.find(d => d.id === user.departmentID);
       if (deptDetails) {
         setDepartmentName(deptDetails.name);
       }
 
       const studentsCount = allUsers.filter(u => u.role === 'student' && u.departmentID === user.departmentID).length;
       const eventsCount = allEvents.filter(e => e.organizerType === 'department' && e.organizerId === user.departmentID).length;
-      // Placeholder for pending clearances and messages
+
       setDeptAdminStats({
         departmentStudents: studentsCount,
         activeEvents: eventsCount,
@@ -48,13 +48,35 @@ export default function DepartmentAdminDashboardPage() {
         recentMessages: 0,
       });
     }
-  }, [user, allUsers, allEvents]);
+  }, [user, allUsers, allEvents, allDepartments, authLoading]);
+
+  if (authLoading) {
+    return (
+        <div className="flex min-h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">Loading Dashboard...</p>
+        </div>
+    );
+  }
+
+  if (!user?.departmentID) {
+     return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle>Department Not Assigned</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">You are not currently assigned to manage a department. Event-related statistics may not be available.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">{departmentName} Admin Dashboard</h1>
-      
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -120,4 +142,3 @@ export default function DepartmentAdminDashboardPage() {
     </div>
   );
 }
-

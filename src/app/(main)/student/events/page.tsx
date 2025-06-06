@@ -2,10 +2,10 @@
 "use client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarDays, Info, ShieldCheck, Building2, Users2 } from "lucide-react";
+import { CalendarDays, Info, ShieldCheck, Building2, Users2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect } from 'react'; // Added for state
-import { useAuth } from '@/contexts/AuthContext'; // To get events
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Event } from '@/types/user';
 
 
@@ -20,7 +20,7 @@ const getOrganizerIcon = (type: string) => {
 
 
 export default function StudentEventsPage() {
-  const { allEvents } = useAuth();
+  const { allEvents, allClubs, allDepartments, loading: authLoading } = useAuth();
   const [studentEvents, setStudentEvents] = useState<Event[]>([]);
 
   useEffect(() => {
@@ -29,6 +29,13 @@ export default function StudentEventsPage() {
     setStudentEvents(allEvents || []);
   }, [allEvents]);
 
+  const getOrganizerName = (type: Event['organizerType'], id: string) => {
+    if (type === 'ssg') return 'SSG';
+    if (type === 'club') return allClubs.find(c => c.id === id)?.name || id;
+    if (type === 'department') return allDepartments.find(d => d.id === id)?.name || id;
+    return id;
+  };
+
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
@@ -36,10 +43,15 @@ export default function StudentEventsPage() {
           <CardTitle className="text-2xl font-headline flex items-center gap-2">
             <CalendarDays className="text-primary h-7 w-7" /> Upcoming Events
           </CardTitle>
-          <CardDescription>Stay informed about events relevant to you.</CardDescription>
+          <CardDescription>Stay informed about events relevant to you (Data from Firestore).</CardDescription>
         </CardHeader>
         <CardContent>
-          {studentEvents.length === 0 ? (
+          {authLoading ? (
+            <div className="flex justify-center items-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2">Loading events...</p>
+            </div>
+          ) : studentEvents.length === 0 ? (
              <p className="text-center text-muted-foreground py-10">No upcoming events scheduled at the moment.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -49,12 +61,13 @@ export default function StudentEventsPage() {
                     <CardTitle className="text-lg">{event.name}</CardTitle>
                     <div className="flex items-center text-sm text-muted-foreground mt-1">
                         {getOrganizerIcon(event.organizerType)}
-                        <span>{event.organizerType.toUpperCase()} {event.organizerType !== 'ssg' ? `(${event.organizerId})` : ''}</span>
+                        <span>{getOrganizerName(event.organizerType, event.organizerId)}</span>
                     </div>
                   </CardHeader>
                   <CardContent className="flex-grow">
                     <p className="text-sm text-muted-foreground"><strong>Date:</strong> {event.date}</p>
                     <p className="text-sm text-muted-foreground"><strong>Time:</strong> {event.timeIn} - {event.timeOut}</p>
+                    <p className="text-sm text-muted-foreground"><strong>Location:</strong> {event.location || 'N/A'}</p>
                     <p className="text-sm mt-2 line-clamp-3">{event.description}</p>
                     {event.sanctions && (
                       <Badge variant={event.sanctions.toLowerCase().includes('deduction') || event.sanctions.toLowerCase().includes('review') ? "destructive" : "secondary"} className="mt-2 text-xs">

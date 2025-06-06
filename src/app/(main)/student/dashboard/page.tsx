@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { QrCode, CalendarDays, FileText, MessageSquare, Award, Bell, Icon } from "lucide-react";
+import { QrCode, CalendarDays, FileText, MessageSquare, Award, Bell, Icon, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -28,7 +28,7 @@ const recentNotifications: {id: string; text: string; time: string}[] = [];
 
 
 export default function StudentDashboardPage() {
-  const { user, allEvents } = useAuth(); // Added allEvents
+  const { user, allEvents, loading: authLoading } = useAuth();
   const [dashboardData, setDashboardData] = useState<StudentDashboardData>({
     upcomingEvents: 0,
     clearanceStatus: "Not Requested",
@@ -38,29 +38,34 @@ export default function StudentDashboardPage() {
   const currentPoints = user?.points ?? 0;
 
   useEffect(() => {
-    // In a real app, clearanceStatus and unreadMessages would be fetched.
-    // For upcomingEvents, we can count from allEvents (if available and relevant).
-    const relevantEventsCount = allEvents.filter(event => {
-      // Basic logic: show all events. Could be filtered by student's dept/club in real app.
-      // Also, filter for events that are 'upcoming' (date >= today)
-      const eventDate = new Date(event.date);
-      const today = new Date();
-      today.setHours(0,0,0,0); // Normalize today to start of day
-      return eventDate >= today;
-    }).length;
+    if (!authLoading) {
+        const relevantEventsCount = allEvents.filter(event => {
+        const eventDate = new Date(event.date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        return eventDate >= today;
+        }).length;
 
-    setDashboardData(prev => ({
-      ...prev,
-      upcomingEvents: relevantEventsCount,
-      // clearanceStatus and unreadMessages remain placeholders for now
-    }));
-  }, [allEvents]);
+        setDashboardData(prev => ({
+        ...prev,
+        upcomingEvents: relevantEventsCount,
+        }));
+    }
+  }, [allEvents, authLoading]);
 
+  if (authLoading) {
+    return (
+        <div className="flex min-h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">Loading Dashboard...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">Welcome, {user?.fullName || 'Student'}!</h1>
-      
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -150,4 +155,3 @@ export default function StudentDashboardPage() {
     </div>
   );
 }
-

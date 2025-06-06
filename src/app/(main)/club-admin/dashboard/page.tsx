@@ -1,10 +1,10 @@
 
 "use client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Users, CalendarDays, ListChecks, MessageSquare } from 'lucide-react';
+import { Users, CalendarDays, ListChecks, MessageSquare, Loader2 } from 'lucide-react';
 import Link from "next/link";
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { useEffect, useState } from 'react'; // Import useEffect and useState
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffect, useState } from 'react';
 
 interface ClubAdminStats {
   clubMembers: number;
@@ -22,7 +22,7 @@ const quickLinks = [
 
 
 export default function ClubAdminDashboardPage() {
-  const { user, allUsers, allEvents, allClubs } = useAuth(); // Get user, allUsers, allEvents, and allClubs from useAuth
+  const { user, allUsers, allEvents, allClubs, loading: authLoading } = useAuth();
   const [clubAdminStats, setClubAdminStats] = useState<ClubAdminStats>({
     clubMembers: 0,
     activeEvents: 0,
@@ -32,30 +32,50 @@ export default function ClubAdminDashboardPage() {
   const [clubName, setClubName] = useState("Club");
 
   useEffect(() => {
-    if (user && user.role === 'club_admin' && user.clubID) {
-      const currentClub = allUsers.find(u => u.userID === user.userID)?.clubID; 
-      const clubDetails = allClubs.find(c => c.id === currentClub);
+    if (!authLoading && user && user.role === 'club_admin' && user.clubID) {
+      const clubDetails = allClubs.find(c => c.id === user.clubID);
       if (clubDetails) {
         setClubName(clubDetails.name);
       }
 
       const membersCount = allUsers.filter(u => u.role === 'student' && u.clubID === user.clubID).length;
       const eventsCount = allEvents.filter(e => e.organizerType === 'club' && e.organizerId === user.clubID).length;
-      
+
       setClubAdminStats({
         clubMembers: membersCount,
         activeEvents: eventsCount,
-        pendingClearances: 0, 
-        recentMessages: 0,    
+        pendingClearances: 0,
+        recentMessages: 0,
       });
     }
-  }, [user, allUsers, allEvents, allClubs]);
+  }, [user, allUsers, allEvents, allClubs, authLoading]);
+
+  if (authLoading) {
+    return (
+        <div className="flex min-h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">Loading Dashboard...</p>
+        </div>
+    );
+  }
+  if (!user?.clubID) {
+     return (
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle>Club Not Assigned</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">You are not currently assigned to manage a club. Event-related statistics may not be available.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">{clubName} Admin Dashboard</h1>
-      
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

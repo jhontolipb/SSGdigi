@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity, Icon } from 'lucide-react';
+import { Users, CalendarDays, ListChecks, MessageSquare, BarChart3, Activity, Icon, Loader2 } from 'lucide-react';
 import Link from "next/link";
 import Image from "next/image";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -27,7 +27,7 @@ const recentActivity: { id: number; description: string; time: string; icon?: Re
 
 
 export function SSGDashboard() {
-  const { allUsers, allEvents } = useAuth();
+  const { allUsers, allEvents, loading: authLoading } = useAuth();
   const [ssgStats, setSsgStats] = useState<SSGStats>({
     totalStudents: 0,
     activeEvents: 0,
@@ -36,21 +36,32 @@ export function SSGDashboard() {
   });
 
   useEffect(() => {
-    const studentsCount = allUsers.filter(u => u.role === 'student').length;
-    const eventsCount = allEvents.length; 
-    // Placeholder for pending clearances and messages
-    setSsgStats({
-      totalStudents: studentsCount,
-      activeEvents: eventsCount,
-      pendingClearances: 0, 
-      recentMessages: 0, 
-    });
-  }, [allUsers, allEvents]);
+    if (!authLoading) {
+        const studentsCount = allUsers.filter(u => u.role === 'student').length;
+        const eventsCount = allEvents.length;
+        // Placeholder for pending clearances and messages
+        setSsgStats({
+        totalStudents: studentsCount,
+        activeEvents: eventsCount,
+        pendingClearances: 0,
+        recentMessages: 0,
+        });
+    }
+  }, [allUsers, allEvents, authLoading]);
+
+  if (authLoading) {
+    return (
+        <div className="flex min-h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">Loading Dashboard...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-headline font-semibold">SSG Admin Dashboard</h1>
-      
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -146,4 +157,3 @@ export function SSGDashboard() {
     </div>
   );
 }
-
