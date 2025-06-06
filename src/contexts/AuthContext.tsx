@@ -1,36 +1,49 @@
 
 "use client";
 
-import type { UserRole, UserProfile, Department, Club, Event } from '@/types/user'; // Added Event
+import type { UserRole, UserProfile, Department, Club, Event } from '@/types/user';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { auth, db } from '@/lib/firebase'; // Import Firebase instances
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  updatePassword as firebaseUpdatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider
+} from 'firebase/auth';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
 
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
-  login: (email: string, passwordAttempt: string) => void;
-  logout: () => void;
-  registerStudent: (fullName: string, email: string, departmentId: string, passwordAttempt: string) => void;
+  login: (email: string, passwordAttempt: string) => Promise<void>;
+  logout: () => Promise<void>;
+  registerStudent: (fullName: string, email: string, departmentId: string, passwordAttempt: string) => Promise<void>;
   allUsers: UserProfile[]; 
-  updateUserClub: (userId: string, clubId: string | null) => void; 
-  addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>;
-  updateUser: (updatedUser: UserProfile) => void; 
-  addUser: (newUser: UserProfile) => void; 
-  deleteUser: (userId: string) => void; 
-  changePassword: (userId: string, currentPasswordAttempt: string, newPassword: string) => Promise<{ success: boolean, message: string }>;
+  updateUser: (updatedProfileData: Partial<UserProfile>, userId: string) => Promise<void>; 
+  addUser: (newUserProfileData: Omit<UserProfile, 'userID' | 'password'>, password?: string) => Promise<string | null>; // Returns new userID or null
+  deleteUserAuth: (userId: string) => Promise<{success: boolean, message: string}>; // Deletes from Firebase Auth
+  deleteUserProfile: (userId: string) => Promise<void>; // Deletes from Firestore
+  changePassword: (currentPasswordAttempt: string, newPassword: string) => Promise<{ success: boolean, message: string }>;
+  fetchUsers: () => Promise<void>; // To refresh allUsers state
+  // These will remain mock for now, to be migrated later
   allClubs: Club[];
   allDepartments: Department[];
-  allEvents: Event[]; // Added allEvents
+  allEvents: Event[];
   addEvent: (newEvent: Event) => void;
   updateEvent: (updatedEvent: Event) => void;
   deleteEvent: (eventId: string) => void;
+  updateUserClub: (userId: string, clubId: string | null) => void; // Will be part of updateUser
+  addNewOIC: (fullName: string, email: string) => Promise<{success: boolean, message: string}>; // Will use addUser
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const defaultPassword = "password123";
-
+// Default departments and clubs remain for selection UI and structure, not users.
 const defaultDepartments: Department[] = [
   { id: 'dept_bs_tourism', name: 'BS Tourism Management' },
   { id: 'dept_bs_it', name: 'BS Information Technology' },
@@ -47,92 +60,55 @@ const defaultClubs: Club[] = [
   { id: 'club_eco_warriors', name: 'Eco Warriors Club', description: 'Advocating for environmental sustainability on campus.' },
 ];
 
-const initialMockUsers: UserProfile[] = [
-  { userID: 'ssg001', email: 'ssg.superadmin@yourcampus.edu', fullName: 'Super Admin', role: 'ssg_admin', password: defaultPassword },
-];
-
-const initialMockEvents: Event[] = [];
-
+const initialMockEvents: Event[] = []; // Events will also be migrated later
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [allUsers, setAllUsers] = useState<UserProfile[]>(initialMockUsers);
-  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]); // Populated from Firestore
+  const [allEvents, setAllEvents] = useState<Event[]>(initialMockEvents); // Mock for now
   const router = useRouter();
   const pathname = usePathname();
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load current user
-    const storedUser = localStorage.getItem('campusConnectUser');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-    }
-
-    // Load all users from localStorage or initialize
-    const storedAllUsers = localStorage.getItem('allMockUsers');
-    if (storedAllUsers) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
         try {
-            const parsedAllUsers = JSON.parse(storedAllUsers);
-            if (Array.isArray(parsedAllUsers) && parsedAllUsers.every(u => u.userID && u.email && u.fullName && u.role)) { // Basic validation
-                setAllUsers(parsedAllUsers);
-                if (storedUser) {
-                    const parsedCurrentUser = JSON.parse(storedUser);
-                    const canonicalUser = parsedAllUsers.find(u => u.userID === parsedCurrentUser.userID);
-                    if (canonicalUser) {
-                        setUser(canonicalUser);
-                    } else { 
-                        localStorage.removeItem('campusConnectUser');
-                        setUser(null);
-                    }
-                }
-            } else { // Invalid data in localStorage, reset with initial (superadmin only)
-                localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
-                setAllUsers(initialMockUsers);
-                // If current user was in bad data, clear them too
-                if (user && !initialMockUsers.find(u => u.userID === user.userID)) {
-                    localStorage.removeItem('campusConnectUser');
-                    setUser(null);
-                }
-            }
-        } catch (e) {
-            console.error("Failed to parse allMockUsers from localStorage", e);
-            localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
-            setAllUsers(initialMockUsers);
-             if (user && !initialMockUsers.find(u => u.userID === user.userID)) {
-                localStorage.removeItem('campusConnectUser');
-                setUser(null);
-            }
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            setUser({ userID: firebaseUser.uid, ...userDocSnap.data() } as UserProfile);
+          } else {
+            // User exists in Auth but not in Firestore users collection. This is an edge case.
+            // For now, sign them out. Could also create a default profile or redirect to a setup page.
+            console.warn("User exists in Auth, but no profile in Firestore. Logging out.");
+            await signOut(auth);
+            setUser(null);
+          }
+        } catch (error) {
+            console.error("Error fetching user profile from Firestore:", error);
+            setUser(null); // Ensure user is null if profile fetch fails
         }
-    } else { // No stored users, initialize with superadmin only
-        localStorage.setItem('allMockUsers', JSON.stringify(initialMockUsers));
-        setAllUsers(initialMockUsers);
-    }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    // Fetch all users for admin management (can be optimized later for larger datasets)
+    fetchUsers();
     
-    // Load events from localStorage or initialize
+    // Load events from localStorage or initialize (temporary)
     const storedEvents = localStorage.getItem('campusConnectEvents');
     if (storedEvents) {
         try {
             const parsedEvents = JSON.parse(storedEvents);
-            if (Array.isArray(parsedEvents)) { 
-                setAllEvents(parsedEvents);
-            } else {
-                localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
-                setAllEvents(initialMockEvents);
-            }
-        } catch(e) {
-            console.error("Failed to parse campusConnectEvents from localStorage", e);
-            localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
-            setAllEvents(initialMockEvents);
-        }
-    } else {
-        localStorage.setItem('campusConnectEvents', JSON.stringify(initialMockEvents));
-        setAllEvents(initialMockEvents);
+            if (Array.isArray(parsedEvents)) setAllEvents(parsedEvents);
+        } catch(e) { console.error("Failed to parse events from LS", e); }
     }
 
-    setLoading(false);
+    return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
@@ -146,162 +122,220 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             case 'department_admin': router.push('/department-admin/dashboard'); break;
             case 'oic': router.push('/oic/events'); break;
             case 'student': router.push('/student/dashboard'); break;
-            default: router.push('/login');
+            default: router.push('/login'); // Fallback
         }
     }
   }, [user, loading, pathname, router]);
 
-
-  const login = (email: string, passwordAttempt: string) => {
-    const foundUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (foundUser && foundUser.password === passwordAttempt) {
-        localStorage.setItem('campusConnectUser', JSON.stringify(foundUser));
-        setUser(foundUser);
-         toast({ title: "Login Successful", description: `Welcome back, ${foundUser.fullName}!` });
-      } else {
-        toast({ title: "Login Failed", description: "Invalid email or password.", variant: "destructive" });
-      }
-  };
-
-  const registerStudent = (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
-    const existingUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existingUser) {
-        toast({ title: "Registration Failed", description: "Email already registered.", variant: "destructive" });
-        return;
+  const fetchUsers = async () => {
+    try {
+      const usersCollectionRef = collection(db, "users");
+      const querySnapshot = await getDocs(usersCollectionRef);
+      const usersList = querySnapshot.docs.map(docSnap => ({ userID: docSnap.id, ...docSnap.data() } as UserProfile));
+      setAllUsers(usersList);
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+      toast({ title: "Error", description: "Could not load user data.", variant: "destructive" });
     }
-
-    const newStudent: UserProfile = {
-      userID: 'user-' + Math.random().toString(36).substr(2, 9),
-      email,
-      fullName,
-      role: 'student',
-      departmentID: departmentId,
-      password: passwordAttempt,
-      qrCodeID: 'qr-' + Math.random().toString(36).substr(2, 9),
-      points: 0,
-    };
-    
-    setAllUsers(prev => {
-        const updatedAllUsers = [...prev, newStudent];
-        localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers)); 
-        return updatedAllUsers;
-    });
-    localStorage.setItem('campusConnectUser', JSON.stringify(newStudent));
-    setUser(newStudent);
-    toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
-    router.push('/student/dashboard');
   };
 
-  const logout = () => {
-    localStorage.removeItem('campusConnectUser');
-    setUser(null);
-    router.push('/login');
+  const login = async (email: string, passwordAttempt: string) => {
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, passwordAttempt);
+      // onAuthStateChanged will handle setting user and redirecting
+      toast({ title: "Login Successful", description: `Welcome back!` });
+    } catch (error: any) {
+      console.error("Login error", error);
+      toast({ title: "Login Failed", description: error.message || "Invalid email or password.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerStudent = async (fullName: string, email: string, departmentId: string, passwordAttempt: string) => {
+    setLoading(true);
+    try {
+      // Check if email already exists in Firestore (Auth guards against duplicates too, but this is an extra check for profiles)
+      const usersQuery = query(collection(db, "users"), where("email", "==", email));
+      const querySnapshot = await getDocs(usersQuery);
+      if (!querySnapshot.empty) {
+        toast({ title: "Registration Failed", description: "Email already associated with a profile.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, passwordAttempt);
+      const firebaseUser = userCredential.user;
+      const newStudentProfile: UserProfile = {
+        userID: firebaseUser.uid,
+        email,
+        fullName,
+        role: 'student',
+        departmentID: departmentId,
+        qrCodeID: 'qr-' + firebaseUser.uid.substring(0,8) + Date.now().toString().slice(-4), // More unique QR
+        points: 0,
+        // Password is not stored in Firestore profile
+      };
+      await setDoc(doc(db, 'users', firebaseUser.uid), newStudentProfile);
+      // onAuthStateChanged will set the user, triggering redirect.
+      toast({ title: "Registration Successful", description: `Welcome, ${fullName}!` });
+    } catch (error: any) {
+      console.error("Registration error", error);
+      toast({ title: "Registration Failed", description: error.message || "Could not create account.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    setLoading(true);
+    try {
+      await signOut(auth);
+      // onAuthStateChanged will set user to null and trigger redirect.
+    } catch (error: any) {
+      console.error("Logout error", error);
+      toast({ title: "Logout Error", description: error.message || "Could not log out.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
   
-  const updateUserClub = (userId: string, clubId: string | null) => {
-    setAllUsers(prevUsers => {
-        const updated = prevUsers.map(u => 
-            u.userID === userId ? { ...u, clubID: clubId || undefined } : u
-        );
-        localStorage.setItem('allMockUsers', JSON.stringify(updated));
-        return updated;
-    });
-    if (user && user.userID === userId) {
-      const updatedUser = { ...user, clubID: clubId || undefined };
-      setUser(updatedUser);
-      localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
+  const updateUser = async (updatedProfileData: Partial<UserProfile>, userIdToUpdate: string) => {
+    try {
+      const userDocRef = doc(db, 'users', userIdToUpdate);
+      // Ensure sensitive fields like userID or role are not directly updatable if they shouldn't be
+      const { userID, password, ...safeUpdates } = updatedProfileData; 
+      await updateDoc(userDocRef, safeUpdates);
+      
+      // Refresh allUsers state
+      await fetchUsers();
+
+      // If updating the current user, update local user state
+      if (user && user.userID === userIdToUpdate) {
+        setUser(prev => prev ? ({ ...prev, ...safeUpdates }) : null);
+      }
+      toast({ title: "Success", description: "User profile updated." });
+    } catch (error: any) {
+      console.error("Error updating user profile:", error);
+      toast({ title: "Error", description: error.message || "Could not update user profile.", variant: "destructive" });
     }
   };
 
-  const addNewOIC = async (fullName: string, email: string): Promise<{success: boolean, message: string}> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const existingUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-        if (existingUser) {
-          resolve({ success: false, message: "Email already registered." });
-          return;
-        }
+  // For admins creating users
+  const addUser = async (newUserProfileData: Omit<UserProfile, 'userID' | 'password'>, password?: string): Promise<string | null> => {
+    if (!password) {
+      toast({ title: "Error", description: "Password is required for new users.", variant: "destructive" });
+      return null;
+    }
+    
+    // Check if email already exists in Firestore
+    const usersQuery = query(collection(db, "users"), where("email", "==", newUserProfileData.email));
+    const querySnapshot = await getDocs(usersQuery);
+    if (!querySnapshot.empty) {
+        toast({ title: "Creation Failed", description: "Email already exists in user profiles.", variant: "destructive" });
+        return null;
+    }
 
-        const newOIC: UserProfile = {
-          userID: 'oic-' + Math.random().toString(36).substring(2, 9),
-          email,
-          fullName,
-          role: 'oic',
-          password: defaultPassword, 
-        };
-        setAllUsers(prev => {
-            const updated = [...prev, newOIC];
-            localStorage.setItem('allMockUsers', JSON.stringify(updated));
-            return updated;
-        });
-        resolve({ success: true, message: "New OIC added successfully." });
-      }, 500);
-    });
-  };
+    // Temporary way to create user in Auth - This is not ideal as it signs in the new user for the admin.
+    // A proper solution uses Firebase Admin SDK on a backend or Cloud Function.
+    // For this client-side prototype, we'll accept this limitation.
+    let createdAuthUserUid: string | null = null;
+    const currentAuthUser = auth.currentUser; 
 
-  const updateUser = (updatedUser: UserProfile) => {
-    setAllUsers(prevUsers => {
-        const updated = prevUsers.map(u => u.userID === updatedUser.userID ? updatedUser : u);
-        localStorage.setItem('allMockUsers', JSON.stringify(updated));
-        return updated;
-    });
-    if (user && user.userID === updatedUser.userID) {
-      setUser(updatedUser);
-      localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
+    try {
+      const tempUserCredential = await createUserWithEmailAndPassword(auth, newUserProfileData.email, password);
+      createdAuthUserUid = tempUserCredential.user.uid;
+
+      const finalProfileData: Omit<UserProfile, 'password'> = {
+        ...newUserProfileData,
+        userID: createdAuthUserUid, // This will be overwritten by Firestore doc ID
+        qrCodeID: newUserProfileData.role === 'student' ? 'qr-' + createdAuthUserUid.substring(0,8) + Date.now().toString().slice(-4) : undefined,
+        points: newUserProfileData.role === 'student' ? 0 : undefined,
+      };
+      await setDoc(doc(db, 'users', createdAuthUserUid), finalProfileData);
+      
+      // Sign back in the original admin user if one was logged in
+      if (currentAuthUser && currentAuthUser.email && user?.password) { // Need user's current password to re-login
+          // This is a simplified re-login. Real re-auth is more complex.
+          // For now, we rely on onAuthStateChanged to eventually pick up the original admin if they re-login manually
+          // or if the app navigates in a way that triggers re-auth.
+          // A better approach for admin user creation involves backend functions.
+          // For now, we'll just proceed. The admin might have to re-login if their session is lost.
+          await signOut(auth); // Sign out the newly created user
+          // Attempt to re-sign in the admin - this part is tricky client-side
+          // For simplicity, we'll assume the admin might need to manually re-login if session is lost
+          // or onAuthStateChanged handles it if the admin's token is still valid.
+          // The main goal here is that the new user is in Auth and Firestore.
+      }
+      
+      await fetchUsers(); // Refresh list
+      toast({ title: "User Created", description: `${newUserProfileData.fullName} added successfully.` });
+      return createdAuthUserUid;
+    } catch (error: any) {
+      console.error("Error creating user (Auth/Firestore):", error);
+      toast({ title: "Creation Failed", description: error.message || "Could not create user.", variant: "destructive" });
+      // If user was created in Auth but Firestore failed, try to delete from Auth
+      if (createdAuthUserUid && error.code !== 'auth/email-already-in-use') {
+          // This requires re-authentication of the admin or a backend function. Complex client-side.
+          console.warn("User created in Auth but Firestore profile failed. Manual cleanup might be needed in Firebase Auth console.");
+      }
+      return null;
     }
   };
 
-  const addUser = (newUser: UserProfile) => {
-    setAllUsers(prevUsers => {
-        const updated = [...prevUsers, newUser];
-        localStorage.setItem('allMockUsers', JSON.stringify(updated));
-        return updated;
-    });
+  // This function is problematic to implement securely on the client-side
+  // as deleting other users from Firebase Auth requires admin privileges, typically via Admin SDK.
+  // For this prototype, we will only delete the Firestore profile. Auth deletion would need manual console action or a backend.
+  const deleteUserAuth = async (userId: string): Promise<{success: boolean, message: string}> => {
+    toast({ title: "Action Required", description: "Deleting users from Firebase Authentication must be done via the Firebase Console or a backend function for security reasons in this prototype.", variant: "default" });
+    return { success: false, message: "Manual deletion from Firebase Auth required." };
+    // Actual client-side deletion is complex and insecure for other users.
+    // const userToDelete = auth.currentUser; // This would be the *currently logged in user*
+    // if (userToDelete && userToDelete.uid === userId) { ... }
   };
-
-  const deleteUser = (userId: string) => {
-    setAllUsers(prevUsers => {
-        const updated = prevUsers.filter(u => u.userID !== userId);
-        localStorage.setItem('allMockUsers', JSON.stringify(updated));
-        return updated;
-    });
-     if (user && user.userID === userId) { 
-        logout();
+  
+  const deleteUserProfile = async (userId: string) => {
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+      await fetchUsers(); // Refresh user list
+      toast({ title: "Success", description: "User profile deleted from Firestore." });
+    } catch (error: any) {
+      console.error("Error deleting user profile:", error);
+      toast({ title: "Error", description: error.message || "Could not delete user profile.", variant: "destructive" });
     }
   };
 
-  const changePassword = async (userId: string, currentPasswordAttempt: string, newPassword: string): Promise<{ success: boolean, message: string }> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            const userIndex = allUsers.findIndex(u => u.userID === userId);
-            if (userIndex === -1) {
-                resolve({ success: false, message: "User not found." });
-                return;
-            }
+  const changePassword = async (currentPasswordAttempt: string, newPassword: string): Promise<{ success: boolean, message: string }> => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser || !firebaseUser.email) {
+      return { success: false, message: "No user logged in or email not found." };
+    }
 
-            const targetUser = allUsers[userIndex];
-            if (targetUser.password !== currentPasswordAttempt) {
-                resolve({ success: false, message: "Current password incorrect." });
-                return;
-            }
-
-            const updatedUser = { ...targetUser, password: newPassword };
-            
-            const updatedAllUsers = [...allUsers];
-            updatedAllUsers[userIndex] = updatedUser;
-            setAllUsers(updatedAllUsers);
-            localStorage.setItem('allMockUsers', JSON.stringify(updatedAllUsers));
-
-            if (user && user.userID === userId) {
-                setUser(updatedUser);
-                localStorage.setItem('campusConnectUser', JSON.stringify(updatedUser));
-            }
-            resolve({ success: true, message: "Password updated successfully." });
-        }, 500);
-    });
+    try {
+      // Re-authenticate user before changing password for security
+      const credential = EmailAuthProvider.credential(firebaseUser.email, currentPasswordAttempt);
+      await reauthenticateWithCredential(firebaseUser, credential);
+      
+      // If re-authentication is successful, update the password
+      await firebaseUpdatePassword(firebaseUser, newPassword);
+      // Note: We don't store password in Firestore profile, so no Firestore update needed here for the password itself.
+      toast({ title: "Success", description: "Password updated successfully." });
+      return { success: true, message: "Password updated successfully." };
+    } catch (error: any) {
+      console.error("Password change error", error);
+      let message = "Could not update password.";
+      if (error.code === 'auth/wrong-password') {
+        message = "Current password incorrect.";
+      } else if (error.code === 'auth/weak-password') {
+        message = "New password is too weak.";
+      }
+      toast({ title: "Error", description: message, variant: "destructive" });
+      return { success: false, message };
+    }
   };
 
+  // MOCK EVENT FUNCTIONS (to be migrated)
   const addEvent = (newEvent: Event) => {
     setAllEvents(prevEvents => {
         const updatedEvents = [...prevEvents, newEvent];
@@ -309,7 +343,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return updatedEvents;
     });
   };
-
   const updateEvent = (updatedEvent: Event) => {
     setAllEvents(prevEvents => {
         const updatedEvents = prevEvents.map(event => event.id === updatedEvent.id ? updatedEvent : event);
@@ -317,13 +350,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return updatedEvents;
     });
   };
-
   const deleteEvent = (eventId: string) => {
     setAllEvents(prevEvents => {
         const updatedEvents = prevEvents.filter(event => event.id !== eventId);
         localStorage.setItem('campusConnectEvents', JSON.stringify(updatedEvents));
         return updatedEvents;
     });
+  };
+
+  // Deprecated placeholders - functionality should be within updateUser or addUser now
+  const updateUserClub = async (userId: string, clubId: string | null) => {
+    await updateUser({ clubID: clubId || undefined }, userId);
+  };
+  const addNewOIC = async (fullName: string, email: string): Promise<{success: boolean, message: string}> => {
+     const oicProfile: Omit<UserProfile, 'userID' | 'password'> = {
+        email,
+        fullName,
+        role: 'oic',
+     };
+     const newOicId = await addUser(oicProfile, "password123"); // Using default password
+     if (newOicId) {
+        return { success: true, message: "New OIC added to Firestore and Auth." };
+     }
+     return { success: false, message: "Failed to add OIC." };
   };
 
 
@@ -335,18 +384,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout, 
         registerStudent, 
         allUsers, 
-        updateUserClub,
-        addNewOIC,
         updateUser,
         addUser,
-        deleteUser,
+        deleteUserAuth,
+        deleteUserProfile,
         changePassword,
+        fetchUsers,
         allClubs: defaultClubs, 
         allDepartments: defaultDepartments, 
+        // Mocked event system for now
         allEvents,
         addEvent,
         updateEvent,
         deleteEvent,
+        // Deprecated placeholders
+        updateUserClub, 
+        addNewOIC,
     }}>
       {children}
     </AuthContext.Provider>
@@ -363,4 +416,3 @@ export function useAuth() {
 
 export const PredefinedDepartments = defaultDepartments;
 export const PredefinedClubs = defaultClubs;
-

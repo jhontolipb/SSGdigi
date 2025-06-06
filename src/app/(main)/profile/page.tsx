@@ -21,7 +21,7 @@ import { Loader2, KeyRound } from "lucide-react";
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required."),
-  newPassword: z.string().min(8, "New password must be at least 8 characters."),
+  newPassword: z.string().min(8, "New password must be at least 8 characters."), // Firebase minimum is 6, but 8 is better practice
   confirmNewPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmNewPassword, {
   message: "New passwords don't match.",
@@ -29,7 +29,7 @@ const changePasswordSchema = z.object({
 });
 
 export default function ProfilePage() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword: authChangePassword, loading: authLoading } = useAuth(); // Renamed to authChangePassword
   const { toast } = useToast();
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [isPasswordChanging, setIsPasswordChanging] = useState(false);
@@ -43,12 +43,17 @@ export default function ProfilePage() {
     },
   });
 
-  if (!user) {
-    return <p>Loading user profile...</p>;
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
   }
 
-  const getInitials = (name: string) => {
+  const getInitials = (name: string = "") => {
     const names = name.split(' ');
+    if (names.length === 0 || names[0] === "") return "?";
     let initials = names[0].substring(0, 1).toUpperCase();
     if (names.length > 1) {
       initials += names[names.length - 1].substring(0, 1).toUpperCase();
@@ -61,13 +66,13 @@ export default function ProfilePage() {
   const onPasswordSubmit = async (values: z.infer<typeof changePasswordSchema>) => {
     if (!user) return;
     setIsPasswordChanging(true);
-    const result = await changePassword(user.userID, values.currentPassword, values.newPassword);
+    const result = await authChangePassword(values.currentPassword, values.newPassword);
     if (result.success) {
       toast({ title: "Success", description: result.message });
       setIsPasswordDialogOpen(false);
       passwordForm.reset();
     } else {
-      toast({ title: "Error", description: result.message, variant: "destructive" });
+      // Toast is handled by AuthContext's changePassword on failure
     }
     setIsPasswordChanging(false);
   };
@@ -197,8 +202,8 @@ export default function ProfilePage() {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">QR Code ID: {user.qrCodeID}</p>
-                <Button variant="outline" onClick={() => alert("Download QR functionality to be implemented.")}>
-                  Download QR Code
+                <Button variant="outline" onClick={() => alert("Download QR functionality to be implemented.")} disabled>
+                  Download QR Code (Not Impl.)
                 </Button>
               </div>
             </>

@@ -20,17 +20,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+// useToast is now handled by AuthContext for login errors
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }), // Min 1, actual check done by Firebase
 });
 
 export function LoginForm() {
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -42,17 +41,10 @@ export function LoginForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // Simulate API call for realistic delay
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-    login(values.email, values.password); 
-    // Login function in AuthContext will handle navigation or error toast
-    // If login is successful, AuthContext redirects. If not, toast is shown.
-    // So, we might not always want to setIsLoading(false) here immediately,
-    // but if login fails and user stays on page, button should be re-enabled.
-    // The AuthContext's login itself doesn't return success/failure directly for this mock,
-    // it handles navigation or toasts. We'll set loading false after a delay
-    // to allow time for redirection or toast to appear.
-    setTimeout(() => setIsLoading(false), 1000); 
+    await login(values.email, values.password); 
+    // AuthContext's login function will handle navigation or error toast
+    // and also sets its own loading state if needed, but we manage local button loading.
+    setIsLoading(false); 
   }
 
   return (

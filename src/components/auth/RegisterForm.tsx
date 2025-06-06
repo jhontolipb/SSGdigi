@@ -21,12 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth, PredefinedDepartments } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+// useToast is now handled by AuthContext for registration errors
 
 const formSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters." }), // Firebase has its own password strength rules
   confirmPassword: z.string(),
   departmentId: z.string().min(1, { message: "Please select your department." }),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -38,7 +38,6 @@ const formSchema = z.object({
 export function RegisterForm() {
   const { registerStudent } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -53,10 +52,9 @@ export function RegisterForm() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    registerStudent(values.fullName, values.email, values.departmentId, values.password);
+    await registerStudent(values.fullName, values.email, values.departmentId, values.password);
     // registerStudent handles navigation or toast for errors.
-    setTimeout(() => setIsLoading(false), 1000);
+    setIsLoading(false);
   }
 
   return (
