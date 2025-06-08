@@ -19,73 +19,104 @@ export default function OICScannerPage() {
   const { allUsers } = useAuth();
 
   useEffect(() => {
-    // Cleanup function to stop scanner when component unmounts
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear();
+    if (isScanning) {
+      const qrReaderElement = document.getElementById("qr-reader");
+      if (!qrReaderElement) {
+        console.error("QR reader element not found!");
+        setScanResult({ type: 'error', message: 'Scanner UI element could not be initialized. Please refresh the page.' });
+        setIsScanning(false);
+        setHasCameraPermission(false);
+        return;
       }
-    };
-  }, []);
 
-  const handleQrCodeScanned = (decodedText: string) => {
-    setScannedData(decodedText);
-    const studentProfile = allUsers.find(u => u.role === 'student' && u.qrCodeID === decodedText);
+      const localScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          showTorchButtonIfSupported: true,
+        },
+        false // verbose = false
+      );
+      scannerRef.current = localScanner;
 
-    if (studentProfile) {
-      // Simulate Time In / Time Out logic - This would need persistent storage
-      const scanType = Math.random() > 0.5 ? 'IN' : 'OUT'; // Simple random for demo
-      setScanResult({ 
-        type: 'success', 
-        message: `Scanned ${scanType}: ${studentProfile.fullName}`, 
-        studentInfo: { 
-          name: studentProfile.fullName, 
-          department: studentProfile.departmentID || 'N/A', 
-          club: studentProfile.clubID 
+      const onScanSuccess = (decodedText: string) => {
+        setScannedData(decodedText);
+        const studentProfile = allUsers.find(u => u.role === 'student' && u.qrCodeID === decodedText);
+
+        if (studentProfile) {
+          const scanType = Math.random() > 0.5 ? 'IN' : 'OUT'; // Simple random for demo
+          setScanResult({ 
+            type: 'success', 
+            message: `Scanned ${scanType}: ${studentProfile.fullName}`, 
+            studentInfo: { 
+              name: studentProfile.fullName, 
+              department: studentProfile.departmentID || 'N/A', 
+              club: studentProfile.clubID 
+            }
+          });
+          toast({ title: "Scan Successful", description: `${studentProfile.fullName} scanned ${scanType}.` });
+        } else {
+          setScanResult({ type: 'error', message: 'Invalid QR Code. Student not found in system.' });
+          toast({ title: "Scan Failed", description: "Student QR code not recognized.", variant: "destructive" });
         }
-      });
-      toast({ title: "Scan Successful", description: `${studentProfile.fullName} scanned ${scanType}.` });
+      };
+
+      const onScanFailure = (errorMessage: string) => {
+        console.log(`QR Scan Error: ${errorMessage}`);
+        const lowerError = errorMessage.toLowerCase();
+        if (
+          lowerError.includes("permission denied") ||
+          lowerError.includes("notallowederror") ||
+          lowerError.includes("camera not found") ||
+          lowerError.includes("no cameras found") ||
+          lowerError.includes("requested device not found") ||
+          lowerError.includes("notreadableerror")
+        ) {
+          setHasCameraPermission(false);
+          setScanResult({ type: 'error', message: `Camera access error: ${errorMessage}. Please check permissions and ensure your camera is not in use by another application.` });
+          setIsScanning(false); // Stop scanning attempts if critical camera error
+        }
+      };
+
+      try {
+        localScanner.render(onScanSuccess, onScanFailure);
+        setHasCameraPermission(null); // Initially unknown, will be updated by onScanFailure if needed
+      } catch (error: any) {
+        console.error("Failed to initialize or render QR Scanner:", error);
+        setHasCameraPermission(false);
+        setScanResult({ type: 'error', message: `Error initializing scanner: ${error.message || 'Unknown error'}. Ensure your browser supports the necessary features and camera is available.` });
+        setIsScanning(false);
+      }
+
+      return () => {
+        if (scannerRef.current) {
+          scannerRef.current.clear().catch(err => {
+            console.error("Error clearing scanner:", err);
+          });
+          scannerRef.current = null;
+        }
+      };
     } else {
-      setScanResult({ type: 'error', message: 'Invalid QR Code. Student not found in system.' });
-      toast({ title: "Scan Failed", description: "Student QR code not recognized.", variant: "destructive" });
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(err => {
+          console.error("Error clearing scanner (isScanning false):", err);
+        });
+        scannerRef.current = null;
+      }
+      setHasCameraPermission(null); // Reset permission state when not scanning
     }
-  };
+  }, [isScanning, allUsers, toast]);
 
   const handleScanStart = () => {
     setScanResult(null);
     setScannedData(null);
-    setIsScanning(true);
-
-    // Initialize the QR code scanner
-    scannerRef.current = new Html5QrcodeScanner(
-      "qr-reader",
-      {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-        showTorchButtonIfSupported: true,
-      },
-      false
-    );
-
-    scannerRef.current.render(
-      (decodedText) => {
-        handleQrCodeScanned(decodedText);
-      },
-      (errorMessage) => {
-        console.log(errorMessage);
-      }
-    );
-
-    setHasCameraPermission(true);
+    setIsScanning(true); 
   };
 
   const handleScanStop = () => {
-    if (scannerRef.current) {
-      scannerRef.current.clear();
-      scannerRef.current = null;
-    }
-    setIsScanning(false);
-    setHasCameraPermission(null);
+    setIsScanning(false); 
   };
 
   return (
